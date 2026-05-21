@@ -1,13 +1,14 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { listCacheActions, runCacheAction } from './handlers/cache.js';
 import { tailLog } from './handlers/logs.js';
+import { loadPortMap, savePortMap } from './handlers/port-map.js';
 
 const activeTails = new WeakMap();
 const activeCacheActions = new WeakMap();
 
 export function createRouter(config) {
-  const portMap = loadPortMap(config.portMapPath);
+  const state = {
+    portMap: loadPortMap(config.portMapPath)
+  };
 
   return async function route(ws, message) {
     switch (message.cmd) {
@@ -20,7 +21,20 @@ export function createRouter(config) {
         break;
 
       case 'set_context':
-        setContext(ws, config, portMap, message);
+        setContext(ws, config, state.portMap, message);
+        break;
+
+      case 'get_port_map':
+        send(ws, { type: 'port_map', portMap: state.portMap });
+        break;
+
+      case 'reload_port_map':
+        state.portMap = loadPortMap(config.portMapPath);
+        send(ws, { type: 'port_map', portMap: state.portMap });
+        break;
+
+      case 'save_port_map':
+        saveNextPortMap(ws, config, state, message);
         break;
 
       case 'stop_log':
@@ -117,10 +131,18 @@ function stopCacheActions(ws) {
   activeCacheActions.delete(ws);
 }
 
-function loadPortMap(portMapPath) {
-  try {
-    return JSON.parse(readFileSync(resolve(portMapPath), 'utf8'));
-  } catch {
-    return {};
+function saveNextPortMap(ws, config, state, message) {
+  const result = savePortMap(config.portMapPath, message.portMap, config.allowedLogDirs);
+
+  if (!result.ok) {
+    send(ws, { type: 'port_map_error', errors: result.errors });
+    return;
+  }
+
+  state.portMap = result.portMap;
+  send(ws, { type: 'port_map_saved', portMap: state.portMap });
+
+  if (ws.leccContext?.port) {
+    setContext(ws, config, state.portMap, { port: ws.leccContext.port });
   }
 }

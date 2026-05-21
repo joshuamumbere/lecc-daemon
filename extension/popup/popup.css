@@ -132,7 +132,8 @@ p {
 
 .context,
 .control-row,
-.control-group {
+.control-group,
+.settings-group {
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 12px;
@@ -193,7 +194,8 @@ input:focus {
   align-items: center;
 }
 
-.control-group {
+.control-group,
+.settings-group {
   display: grid;
   gap: 10px;
 }
@@ -223,6 +225,61 @@ input:focus {
 .action-item strong {
   display: block;
   margin-bottom: 2px;
+}
+
+.project-list {
+  display: grid;
+  gap: 8px;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.4fr) 34px;
+  gap: 6px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: #121515;
+}
+
+.project-row .field {
+  gap: 4px;
+}
+
+.icon-button {
+  width: 34px;
+  height: 38px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.settings-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.button.compact {
+  min-width: 76px;
+}
+
+.message {
+  min-height: 18px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.message[data-tone="error"] {
+  color: var(--danger);
+}
+
+.message[data-tone="success"] {
+  color: var(--accent-strong);
 }
 
 .empty {

@@ -8,6 +8,7 @@ const state = {
   logLines: [],
   commandLines: [],
   cacheActions: [],
+  portMap: {},
   runningActions: new Set(),
   context: null
 };
@@ -24,6 +25,11 @@ const elements = {
   echoButton: document.querySelector('#echoButton'),
   cacheActions: document.querySelector('#cacheActions'),
   commandOutput: document.querySelector('#commandOutput'),
+  portMapRows: document.querySelector('#portMapRows'),
+  addProject: document.querySelector('#addProject'),
+  savePortMap: document.querySelector('#savePortMap'),
+  reloadPortMap: document.querySelector('#reloadPortMap'),
+  portMapStatus: document.querySelector('#portMapStatus'),
   saveSettings: document.querySelector('#saveSettings')
 };
 
@@ -72,6 +78,15 @@ function bindActions() {
     await chrome.runtime.sendMessage({ type: 'settings_updated' });
   });
 
+  elements.addProject.addEventListener('click', () => {
+    const rows = readPortMapRows();
+    rows.push({ port: '', name: '', logPath: '' });
+    renderPortMapRows(rows);
+    setPortMapStatus('');
+  });
+
+  elements.reloadPortMap.addEventListener('click', requestPortMap);
+  elements.savePortMap.addEventListener('click', savePortMap);
   elements.logFilter.addEventListener('input', renderLogs);
 }
 
@@ -135,6 +150,22 @@ function handleDaemonMessage(payload) {
     appendCommandLine(payload.ok ? `[DONE] ${payload.actionId}` : `[FAILED] ${payload.actionId} (${payload.code ?? payload.error})`);
     renderCacheActions();
   }
+
+  if (payload.type === 'port_map') {
+    state.portMap = payload.portMap || {};
+    renderPortMap();
+    setPortMapStatus('Project mappings loaded.', 'success');
+  }
+
+  if (payload.type === 'port_map_saved') {
+    state.portMap = payload.portMap || {};
+    renderPortMap();
+    setPortMapStatus('Project mappings saved.', 'success');
+  }
+
+  if (payload.type === 'port_map_error') {
+    setPortMapStatus((payload.errors || ['Project mappings are invalid.']).join(' '), 'error');
+  }
 }
 
 function updateStatus(nextState) {
@@ -144,9 +175,11 @@ function updateStatus(nextState) {
   elements.connectButton.textContent = nextState === 'connected' ? 'Disconnect' : 'Connect';
   elements.echoButton.disabled = nextState !== 'connected';
   renderCacheActions();
+  renderPortMap();
 
   if (nextState === 'connected') {
     requestCacheActions();
+    requestPortMap();
   }
 }
 
@@ -212,6 +245,121 @@ async function runCacheAction(actionId) {
     type: 'send',
     payload: { cmd: 'run_cache_action', actionId }
   });
+}
+
+function renderPortMap() {
+  if (state.daemonState !== 'connected') {
+    elements.portMapRows.innerHTML = '<p class="empty">Connect to load project mappings.</p>';
+    elements.savePortMap.disabled = true;
+    elements.reloadPortMap.disabled = true;
+    elements.addProject.disabled = true;
+    return;
+  }
+
+  elements.savePortMap.disabled = false;
+  elements.reloadPortMap.disabled = false;
+  elements.addProject.disabled = false;
+
+  const rows = Object.entries(state.portMap).map(([port, entry]) => ({
+    port,
+    name: entry.name || '',
+    logPath: entry.logPath || ''
+  }));
+
+  renderPortMapRows(rows);
+}
+
+function renderPortMapRows(rows) {
+  if (rows.length === 0) {
+    elements.portMapRows.innerHTML = '<p class="empty">No projects mapped yet.</p>';
+    return;
+  }
+
+  elements.portMapRows.replaceChildren(...rows.map((row) => createProjectRow(row)));
+}
+
+function createProjectRow(row) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'project-row';
+
+  const port = createInputField('Port', 'port', row.port, '3000');
+  const name = createInputField('Name', 'name', row.name, 'Frontend');
+  const logPath = createInputField('Log Path', 'logPath', row.logPath, '/tmp/lecc-demo.log');
+  const remove = document.createElement('button');
+  remove.className = 'icon-button';
+  remove.type = 'button';
+  remove.title = 'Remove project mapping';
+  remove.textContent = 'X';
+  remove.addEventListener('click', () => {
+    wrapper.remove();
+    if (elements.portMapRows.children.length === 0) {
+      renderPortMapRows([]);
+    }
+  });
+
+  wrapper.append(port, name, logPath, remove);
+  return wrapper;
+}
+
+function createInputField(label, key, value, placeholder) {
+  const field = document.createElement('label');
+  field.className = 'field';
+
+  const text = document.createElement('span');
+  text.textContent = label;
+
+  const input = document.createElement('input');
+  input.dataset.key = key;
+  input.value = value;
+  input.placeholder = placeholder;
+
+  field.append(text, input);
+  return field;
+}
+
+function readPortMapRows() {
+  return [...elements.portMapRows.querySelectorAll('.project-row')].map((row) => ({
+    port: row.querySelector('[data-key="port"]').value.trim(),
+    name: row.querySelector('[data-key="name"]').value.trim(),
+    logPath: row.querySelector('[data-key="logPath"]').value.trim()
+  }));
+}
+
+async function requestPortMap() {
+  if (state.daemonState !== 'connected') return;
+  setPortMapStatus('Loading project mappings.');
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'get_port_map' }
+  });
+}
+
+async function savePortMap() {
+  const rows = readPortMapRows();
+  const portMap = {};
+
+  rows.forEach((row) => {
+    if (!row.port && !row.name && !row.logPath) return;
+    portMap[row.port] = {
+      name: row.name,
+      logPath: row.logPath
+    };
+  });
+
+  setPortMapStatus('Saving project mappings.');
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'save_port_map', portMap }
+  });
+}
+
+function setPortMapStatus(message, tone = '') {
+  elements.portMapStatus.textContent = message;
+  if (tone) {
+    elements.portMapStatus.dataset.tone = tone;
+  } else {
+    delete elements.portMapStatus.dataset.tone;
+  }
 }
 
 function appendCommandLine(line) {

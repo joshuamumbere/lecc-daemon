@@ -71,6 +71,23 @@
           <input id="token" type="password" autocomplete="off" placeholder="Paste daemon token">
         </label>
         <button id="saveSettings" class="button" type="button">Save Settings</button>
+        <div class="settings-group">
+          <div class="group-heading">
+            <div>
+              <h2>Projects</h2>
+              <p>Map localhost ports to project names and log files.</p>
+            </div>
+            <button id="reloadPortMap" class="button secondary compact" type="button">Reload</button>
+          </div>
+          <div id="portMapRows" class="project-list">
+            <p class="empty">Connect to load project mappings.</p>
+          </div>
+          <div class="settings-actions">
+            <button id="addProject" class="button secondary" type="button">Add Project</button>
+            <button id="savePortMap" class="button" type="button">Save Projects</button>
+          </div>
+          <p id="portMapStatus" class="message" role="status"></p>
+        </div>
       </section>
     </main>
     <script src="popup.js"></script>
