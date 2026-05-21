@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Local Environment Command Center",
   "short_name": "LECC",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Developer command center for local project logs and allow-listed host actions.",
   "permissions": ["activeTab", "storage", "tabs"],
   "host_permissions": ["http://localhost/*", "https://localhost/*", "http://127.0.0.1/*", "https://127.0.0.1/*"],
