@@ -1,9 +1,11 @@
 import { listCacheActions, runCacheAction } from './handlers/cache.js';
+import { listPermissionActions, runPermissionAction } from './handlers/permissions.js';
 import { tailLog } from './handlers/logs.js';
 import { loadPortMap, savePortMap } from './handlers/port-map.js';
 
 const activeTails = new WeakMap();
 const activeCacheActions = new WeakMap();
+const activePermissionActions = new WeakMap();
 
 export function createRouter(config) {
   const state = {
@@ -44,6 +46,7 @@ export function createRouter(config) {
 
       case 'stop_actions':
         stopCacheActions(ws);
+        stopPermissionActions(ws);
         send(ws, { type: 'actions_stopped' });
         break;
 
@@ -53,6 +56,14 @@ export function createRouter(config) {
 
       case 'run_cache_action':
         runAllowedCacheAction(ws, message);
+        break;
+
+      case 'list_permission_actions':
+        send(ws, { type: 'permission_actions', actions: listPermissionActions() });
+        break;
+
+      case 'run_permission_action':
+        runAllowedPermissionAction(ws, config, message);
         break;
 
       case 'echo':
@@ -131,6 +142,42 @@ function stopCacheActions(ws) {
     }
   });
   activeCacheActions.delete(ws);
+}
+
+function runAllowedPermissionAction(ws, config, message) {
+  const actionId = String(message.actionId || '');
+  const requestId = String(message.requestId || `${Date.now()}-${actionId || 'permission-action'}`);
+  const child = runPermissionAction(
+    actionId,
+    requestId,
+    message.params || {},
+    config.allowedPermissionDirs,
+    (payload) => send(ws, payload)
+  );
+  if (!child) return;
+
+  const actions = activePermissionActions.get(ws) || new Set();
+  actions.add(child);
+  activePermissionActions.set(ws, actions);
+
+  child.on('close', () => {
+    actions.delete(child);
+    if (actions.size === 0) {
+      activePermissionActions.delete(ws);
+    }
+  });
+}
+
+function stopPermissionActions(ws) {
+  const actions = activePermissionActions.get(ws);
+  if (!actions) return;
+
+  actions.forEach((child) => {
+    if (!child.killed) {
+      child.kill();
+    }
+  });
+  activePermissionActions.delete(ws);
 }
 
 function saveNextPortMap(ws, config, state, message) {

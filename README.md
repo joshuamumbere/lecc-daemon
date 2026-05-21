@@ -55,6 +55,7 @@ LECC_PORT=17324
 LECC_TOKEN_PATH=/path/to/token
 LECC_PORT_MAP=/path/to/port-map.json
 LECC_ALLOWED_LOG_DIRS=/var/log,/tmp,/home/me/projects
+LECC_ALLOWED_PERMISSION_DIRS=/tmp,/home/me/projects
 LECC_ALLOWED_ORIGINS=chrome-extension://<extension-id>
 ```
 
@@ -116,6 +117,8 @@ The Logs tab supports pausing display updates, clearing the extension-side view,
 The Controls tab also lists cache actions reported by the daemon. Each action maps to a fixed command and argument list in `src/handlers/cache.js`; the extension only sends an action ID.
 
 Cache command runs use request IDs and are tracked in a recent command history. The popup persists the last 20 command runs in `chrome.storage.local`, including status, timestamps, exit code, and failure details.
+
+The Permissions Repair section supports non-recursive `chmod` and `chown` operations on paths inside `LECC_ALLOWED_PERMISSION_DIRS`. Modes are restricted to a small safe set, and owner values must be plain `user` or `user:group` strings.
 
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.
 

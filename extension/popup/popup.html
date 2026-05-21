@@ -92,6 +92,31 @@
         </div>
         <div class="control-group">
           <div class="group-heading">
+            <h2>Permissions Repair</h2>
+            <p>Non-recursive changes inside allowed directories only.</p>
+          </div>
+          <label class="field">
+            <span>Target Path</span>
+            <input id="permissionPath" type="text" placeholder="/home/me/projects/app/storage">
+          </label>
+          <div class="permission-grid">
+            <label class="field">
+              <span>Mode</span>
+              <input id="permissionMode" type="text" inputmode="numeric" placeholder="775">
+            </label>
+            <label class="field">
+              <span>Owner</span>
+              <input id="permissionOwner" type="text" placeholder="user:group">
+            </label>
+          </div>
+          <div class="settings-actions">
+            <button id="applyMode" class="button secondary" type="button">Apply Mode</button>
+            <button id="applyOwner" class="button secondary" type="button">Apply Owner</button>
+          </div>
+          <p class="message">Allowed modes: 600, 640, 644, 660, 664, 700, 750, 755, 770, 775.</p>
+        </div>
+        <div class="control-group">
+          <div class="group-heading">
             <h2>Command History</h2>
             <p>Last 20 command runs.</p>
           </div>

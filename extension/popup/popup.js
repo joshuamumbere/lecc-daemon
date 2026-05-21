@@ -21,6 +21,7 @@ const state = {
   commandLines: [],
   commandHistory: [],
   cacheActions: [],
+  permissionActions: [],
   portMap: {},
   runningActions: new Set(),
   context: null
@@ -48,6 +49,11 @@ const elements = {
   diagnosticUrl: document.querySelector('#diagnosticUrl'),
   diagnosticClose: document.querySelector('#diagnosticClose'),
   cacheActions: document.querySelector('#cacheActions'),
+  permissionPath: document.querySelector('#permissionPath'),
+  permissionMode: document.querySelector('#permissionMode'),
+  permissionOwner: document.querySelector('#permissionOwner'),
+  applyMode: document.querySelector('#applyMode'),
+  applyOwner: document.querySelector('#applyOwner'),
   commandHistory: document.querySelector('#commandHistory'),
   commandOutput: document.querySelector('#commandOutput'),
   portMapRows: document.querySelector('#portMapRows'),
@@ -125,6 +131,11 @@ function bindActions() {
 
   elements.reloadPortMap.addEventListener('click', requestPortMap);
   elements.savePortMap.addEventListener('click', savePortMap);
+  elements.applyMode.addEventListener('click', () => runPermissionAction('chmod_project_path'));
+  elements.applyOwner.addEventListener('click', () => runPermissionAction('chown_project_path'));
+  elements.permissionPath.addEventListener('input', renderPermissionActions);
+  elements.permissionMode.addEventListener('input', renderPermissionActions);
+  elements.permissionOwner.addEventListener('input', renderPermissionActions);
   elements.logFilter.addEventListener('input', renderLogs);
   elements.pauseLogs.addEventListener('click', toggleLogPause);
   elements.clearLogs.addEventListener('click', clearLogView);
@@ -210,8 +221,9 @@ function handleDaemonMessage(payload) {
   }
 
   if (payload.type === 'cache_action_started') {
-    state.runningActions.add(payload.actionId);
+    state.runningActions.add(getCommandKey('cache', payload.actionId));
     upsertCommandRun({
+      type: 'cache',
       requestId: payload.requestId,
       actionId: payload.actionId,
       label: payload.label,
@@ -234,8 +246,9 @@ function handleDaemonMessage(payload) {
   }
 
   if (payload.type === 'cache_action_finished') {
-    state.runningActions.delete(payload.actionId);
+    state.runningActions.delete(getCommandKey('cache', payload.actionId));
     upsertCommandRun({
+      type: 'cache',
       requestId: payload.requestId,
       actionId: payload.actionId,
       label: payload.label || getActionLabel(payload.actionId),
@@ -249,8 +262,9 @@ function handleDaemonMessage(payload) {
   }
 
   if (payload.type === 'cache_action_failed') {
-    state.runningActions.delete(payload.actionId);
+    state.runningActions.delete(getCommandKey('cache', payload.actionId));
     upsertCommandRun({
+      type: 'cache',
       requestId: payload.requestId,
       actionId: payload.actionId,
       label: payload.label || getActionLabel(payload.actionId),
@@ -262,6 +276,75 @@ function handleDaemonMessage(payload) {
     });
     appendCommandLine(`[${payload.requestId}] [FAILED] ${payload.actionId}: ${payload.error}`);
     renderCacheActions();
+  }
+
+  if (payload.type === 'permission_actions') {
+    state.permissionActions = payload.actions || [];
+    renderPermissionActions();
+  }
+
+  if (payload.type === 'permission_action_started') {
+    const key = getCommandKey('permission', payload.actionId, payload.targetPath);
+    state.runningActions.add(key);
+    upsertCommandRun({
+      type: 'permission',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label,
+      targetPath: payload.targetPath,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      endedAt: '',
+      code: null,
+      error: '',
+      command: payload.command,
+      args: payload.args || []
+    });
+    appendCommandLine(`[${payload.requestId}] [START] ${payload.label} ${payload.targetPath}`);
+    renderPermissionActions();
+  }
+
+  if (payload.type === 'permission_action_output') {
+    payload.data.split(/\r?\n/).filter(Boolean).forEach((line) => {
+      appendCommandLine(`[${payload.requestId}] [${payload.stream}] ${line}`);
+    });
+  }
+
+  if (payload.type === 'permission_action_finished') {
+    const key = getCommandKey('permission', payload.actionId, payload.targetPath);
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'permission',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getPermissionActionLabel(payload.actionId),
+      targetPath: payload.targetPath,
+      status: payload.ok ? 'succeeded' : 'failed',
+      endedAt: new Date().toISOString(),
+      code: payload.code ?? null,
+      error: payload.error || ''
+    });
+    appendCommandLine(payload.ok ? `[${payload.requestId}] [DONE] ${payload.actionId}` : `[${payload.requestId}] [FAILED] ${payload.actionId} (${payload.code ?? payload.error})`);
+    renderPermissionActions();
+  }
+
+  if (payload.type === 'permission_action_failed') {
+    const key = getCommandKey('permission', payload.actionId, payload.targetPath);
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'permission',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getPermissionActionLabel(payload.actionId),
+      targetPath: payload.targetPath,
+      status: 'failed',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      code: null,
+      error: payload.error || 'Command failed'
+    });
+    appendCommandLine(`[${payload.requestId}] [FAILED] ${payload.actionId}: ${payload.error}`);
+    renderPermissionActions();
   }
 
   if (payload.type === 'port_map') {
@@ -293,11 +376,13 @@ function updateStatus(nextState) {
   state.isLogStreaming = nextStatus.state === 'connected' && Boolean(state.context?.logPath);
   renderDiagnostics();
   renderCacheActions();
+  renderPermissionActions();
   renderPortMap();
   renderLogStatus();
 
   if (nextStatus.state === 'connected') {
     requestCacheActions();
+    requestPermissionActions();
     requestPortMap();
   }
 }
@@ -494,8 +579,9 @@ function renderCacheActions() {
     const button = document.createElement('button');
     button.className = 'button secondary';
     button.type = 'button';
-    button.textContent = state.runningActions.has(action.id) ? 'Running' : 'Run';
-    button.disabled = state.daemonState !== 'connected' || state.runningActions.has(action.id);
+    const key = getCommandKey('cache', action.id);
+    button.textContent = state.runningActions.has(key) ? 'Running' : 'Run';
+    button.disabled = state.daemonState !== 'connected' || state.runningActions.has(key);
     button.addEventListener('click', () => runCacheAction(action.id));
 
     item.append(copy, button);
@@ -511,11 +597,13 @@ async function requestCacheActions() {
 }
 
 async function runCacheAction(actionId) {
-  if (state.runningActions.has(actionId)) return;
+  const key = getCommandKey('cache', actionId);
+  if (state.runningActions.has(key)) return;
 
   const requestId = createRequestId(actionId);
   const action = state.cacheActions.find((item) => item.id === actionId);
   upsertCommandRun({
+    type: 'cache',
     requestId,
     actionId,
     label: action?.label || actionId,
@@ -525,7 +613,7 @@ async function runCacheAction(actionId) {
     code: null,
     error: ''
   });
-  state.runningActions.add(actionId);
+  state.runningActions.add(key);
   renderCacheActions();
 
   const result = await chrome.runtime.sendMessage({
@@ -534,8 +622,9 @@ async function runCacheAction(actionId) {
   });
 
   if (!result?.ok) {
-    state.runningActions.delete(actionId);
+    state.runningActions.delete(key);
     upsertCommandRun({
+      type: 'cache',
       requestId,
       actionId,
       label: action?.label || actionId,
@@ -544,6 +633,72 @@ async function runCacheAction(actionId) {
       error: result?.error || 'Daemon socket is not connected'
     });
     renderCacheActions();
+  }
+}
+
+async function requestPermissionActions() {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'list_permission_actions' }
+  });
+}
+
+function renderPermissionActions() {
+  const isConnected = state.daemonState === 'connected';
+  const targetPath = elements.permissionPath.value.trim();
+  elements.applyMode.disabled = !isConnected || !targetPath || state.runningActions.has(getCommandKey('permission', 'chmod_project_path', targetPath));
+  elements.applyOwner.disabled = !isConnected || !targetPath || state.runningActions.has(getCommandKey('permission', 'chown_project_path', targetPath));
+  elements.applyMode.textContent = state.runningActions.has(getCommandKey('permission', 'chmod_project_path', targetPath)) ? 'Applying' : 'Apply Mode';
+  elements.applyOwner.textContent = state.runningActions.has(getCommandKey('permission', 'chown_project_path', targetPath)) ? 'Applying' : 'Apply Owner';
+}
+
+async function runPermissionAction(actionId) {
+  const targetPath = elements.permissionPath.value.trim();
+  const mode = elements.permissionMode.value.trim();
+  const owner = elements.permissionOwner.value.trim();
+  const key = getCommandKey('permission', actionId, targetPath);
+  if (state.runningActions.has(key)) return;
+
+  const requestId = createRequestId(actionId);
+  const label = getPermissionActionLabel(actionId);
+  upsertCommandRun({
+    type: 'permission',
+    requestId,
+    actionId,
+    label,
+    targetPath,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    endedAt: '',
+    code: null,
+    error: ''
+  });
+  state.runningActions.add(key);
+  renderPermissionActions();
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: {
+      cmd: 'run_permission_action',
+      actionId,
+      requestId,
+      params: { targetPath, mode, owner }
+    }
+  });
+
+  if (!result?.ok) {
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'permission',
+      requestId,
+      actionId,
+      label,
+      targetPath,
+      status: 'failed',
+      endedAt: new Date().toISOString(),
+      error: result?.error || 'Daemon socket is not connected'
+    });
+    renderPermissionActions();
   }
 }
 
@@ -601,7 +756,9 @@ function formatCommandMeta(run) {
   const code = run.code === null || run.code === undefined ? '' : ` code ${run.code}`;
   const error = run.error ? ` ${run.error}` : '';
   const request = run.requestId ? ` ${run.requestId}` : '';
-  return ended ? `${started} -> ${ended}${code}${error}${request}` : `${started}${request}`;
+  const target = run.targetPath ? ` ${run.targetPath}` : '';
+  const type = run.type ? `${run.type} ` : '';
+  return ended ? `${type}${started} -> ${ended}${code}${error}${request}${target}` : `${type}${started}${request}${target}`;
 }
 
 function createRequestId(actionId) {
@@ -611,6 +768,14 @@ function createRequestId(actionId) {
 
 function getActionLabel(actionId) {
   return state.cacheActions.find((action) => action.id === actionId)?.label || actionId || 'Cache action';
+}
+
+function getPermissionActionLabel(actionId) {
+  return state.permissionActions.find((action) => action.id === actionId)?.label || actionId || 'Permission action';
+}
+
+function getCommandKey(type, actionId, targetPath = '') {
+  return `${type}:${actionId}:${targetPath}`;
 }
 
 function renderPortMap() {

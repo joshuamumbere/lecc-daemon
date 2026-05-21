@@ -20,6 +20,8 @@ Environment overrides:
   LECC_CONFIG_DIR         Daemon config directory, default: ~/.config/lecc
   LECC_PORT               Daemon WebSocket port, default: 17324
   LECC_ALLOWED_LOG_DIRS   Comma-separated allowed log directories
+  LECC_ALLOWED_PERMISSION_DIRS
+                          Comma-separated directories for chmod/chown repairs
   LECC_ALLOWED_ORIGINS    Comma-separated extension origins
 
 Options:
@@ -83,6 +85,7 @@ Environment=LECC_CONFIG_DIR=$CONFIG_DIR
 Environment=LECC_PORT=${LECC_PORT:-17324}
 Environment=LECC_PORT_MAP=$CONFIG_DIR/port-map.json
 Environment=LECC_ALLOWED_LOG_DIRS=${LECC_ALLOWED_LOG_DIRS:-/var/log,/tmp,$HOME/projects}
+Environment=LECC_ALLOWED_PERMISSION_DIRS=${LECC_ALLOWED_PERMISSION_DIRS:-/tmp,$HOME/projects}
 Environment=LECC_ALLOWED_ORIGINS=${LECC_ALLOWED_ORIGINS:-}
 ExecStart=$(command -v node) $INSTALL_DIR/src/index.js
 Restart=on-failure

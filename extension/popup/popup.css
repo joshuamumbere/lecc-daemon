@@ -484,6 +484,12 @@ input:focus {
   gap: 8px;
 }
 
+.permission-grid {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  gap: 8px;
+}
+
 .button.compact {
   min-width: 76px;
 }
