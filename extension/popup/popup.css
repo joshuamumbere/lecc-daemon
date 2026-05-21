@@ -90,7 +90,9 @@ p {
 }
 
 .status[data-state="error"],
-.status[data-state="missing_token"] {
+.status[data-state="missing_token"],
+.status[data-state="daemon_unavailable"],
+.status[data-state="token_rejected"] {
   border-color: rgba(255, 107, 107, .7);
   color: var(--danger);
 }
@@ -197,6 +199,11 @@ p {
   letter-spacing: .08em;
 }
 
+.field small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
 input {
   width: 100%;
   height: 38px;
@@ -288,6 +295,72 @@ input:focus {
   grid-template-columns: 1fr auto;
   gap: 12px;
   align-items: center;
+}
+
+.diagnostics {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 12px;
+}
+
+.diagnostics[data-state="connected"] {
+  border-color: rgba(137, 209, 133, .55);
+}
+
+.diagnostics[data-state="missing_token"],
+.diagnostics[data-state="daemon_unavailable"],
+.diagnostics[data-state="token_rejected"],
+.diagnostics[data-state="error"] {
+  border-color: rgba(255, 107, 107, .55);
+}
+
+.diagnostic-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.diagnostic-list div {
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.diagnostic-list dt {
+  color: var(--muted);
+}
+
+.diagnostic-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.service-help {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.service-help code {
+  display: block;
+  padding: 7px 8px;
+  background: #0d0f10;
+  border: 1px solid var(--line);
+  color: #d9e6d9;
+  overflow-wrap: anywhere;
+}
+
+.diagnostics[data-state="connected"] .service-help,
+.diagnostics[data-state="connecting"] .service-help {
+  display: none;
+}
+
+.button-pair {
+  display: flex;
+  gap: 8px;
 }
 
 .control-group,

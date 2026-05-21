@@ -107,6 +107,8 @@ scripts/uninstall.sh --purge-config
 4. Select the `extension/` directory.
 5. Open the extension popup, paste the daemon token, and save.
 
+The token is stored at `~/.config/lecc/token` by default. The popup Settings tab includes a token reveal toggle and a connection test button. The Controls tab shows connection diagnostics, including the daemon URL, WebSocket close code, and useful service commands when the daemon is unavailable.
+
 Open a localhost tab such as `http://localhost:3000`. If the port exists in `port-map.json`, the extension sends that context to the daemon and streams the mapped log file.
 
 The Logs tab supports pausing display updates, clearing the extension-side view, restarting the current stream, filtering lines, and highlighting common log levels.

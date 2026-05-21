@@ -4,8 +4,15 @@ const DEFAULT_SETTINGS = {
 };
 
 let socket = null;
-let socketState = 'disconnected';
+let socketStatus = {
+  state: 'disconnected',
+  daemonUrl: DEFAULT_SETTINGS.daemonUrl,
+  message: 'Not connected',
+  closeCode: null,
+  closeReason: ''
+};
 let reconnectTimer = null;
+let sawOpen = false;
 
 chrome.runtime.onInstalled.addListener(async () => {
   const current = await chrome.storage.local.get(DEFAULT_SETTINGS);
@@ -30,9 +37,9 @@ async function handleMessage(message) {
       return connect();
     case 'disconnect':
       disconnect();
-      return { ok: true, state: socketState };
+      return { ok: true, status: socketStatus };
     case 'status':
-      return { ok: true, state: socketState };
+      return { ok: true, status: socketStatus };
     case 'settings_updated':
       disconnect();
       return connect();
@@ -45,23 +52,37 @@ async function handleMessage(message) {
 
 async function connect() {
   const settings = await getSettings();
+  updateSocketStatus({
+    daemonUrl: settings.daemonUrl,
+    closeCode: null,
+    closeReason: ''
+  });
+
   if (!settings.token) {
-    socketState = 'missing_token';
-    broadcast({ type: 'daemon_status', state: socketState });
-    return { ok: false, state: socketState };
+    updateSocketStatus({
+      state: 'missing_token',
+      message: 'Paste the daemon token from ~/.config/lecc/token before connecting.'
+    });
+    return { ok: false, status: socketStatus };
   }
 
   if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
-    return { ok: true, state: socketState };
+    return { ok: true, status: socketStatus };
   }
 
-  socketState = 'connecting';
-  broadcast({ type: 'daemon_status', state: socketState });
+  sawOpen = false;
+  updateSocketStatus({
+    state: 'connecting',
+    message: `Connecting to ${settings.daemonUrl}.`
+  });
   socket = new WebSocket(settings.daemonUrl);
 
   socket.addEventListener('open', async () => {
-    socketState = 'connected';
-    broadcast({ type: 'daemon_status', state: socketState });
+    sawOpen = true;
+    updateSocketStatus({
+      state: 'connected',
+      message: `Connected to ${settings.daemonUrl}.`
+    });
     await sendToDaemon({ cmd: 'ping' });
     await updateActiveTabContext();
   });
@@ -76,18 +97,27 @@ async function connect() {
     broadcast({ type: 'daemon_message', payload });
   });
 
-  socket.addEventListener('close', () => {
+  socket.addEventListener('close', (event) => {
     socket = null;
-    socketState = 'disconnected';
-    broadcast({ type: 'daemon_status', state: socketState });
+    const detail = classifyClose(event, sawOpen, settings.daemonUrl);
+    updateSocketStatus(detail);
   });
 
   socket.addEventListener('error', () => {
-    socketState = 'error';
-    broadcast({ type: 'daemon_status', state: socketState });
+    if (!sawOpen) {
+      updateSocketStatus({
+        state: 'daemon_unavailable',
+        message: `Cannot reach daemon at ${settings.daemonUrl}. Check the user service status.`
+      });
+    } else {
+      updateSocketStatus({
+        state: 'error',
+        message: 'WebSocket error while connected to the daemon.'
+      });
+    }
   });
 
-  return { ok: true, state: socketState };
+  return { ok: true, status: socketStatus };
 }
 
 function disconnect() {
@@ -99,18 +129,22 @@ function disconnect() {
     socket = null;
   }
 
-  socketState = 'disconnected';
-  broadcast({ type: 'daemon_status', state: socketState });
+  updateSocketStatus({
+    state: 'disconnected',
+    message: 'Disconnected by user.',
+    closeCode: null,
+    closeReason: ''
+  });
 }
 
 async function sendToDaemon(payload) {
   if (!socket || socket.readyState !== WebSocket.OPEN) {
-    return { ok: false, error: 'Daemon socket is not connected', state: socketState };
+    return { ok: false, error: 'Daemon socket is not connected', status: socketStatus };
   }
 
   const { token } = await getSettings();
   socket.send(JSON.stringify({ ...payload, token }));
-  return { ok: true, state: socketState };
+  return { ok: true, status: socketStatus };
 }
 
 async function updateActiveTabContext(existingTab) {
@@ -138,4 +172,42 @@ async function getSettings() {
 
 function broadcast(message) {
   chrome.runtime.sendMessage(message).catch(() => {});
+}
+
+function updateSocketStatus(nextStatus) {
+  socketStatus = {
+    ...socketStatus,
+    ...nextStatus
+  };
+  broadcast({ type: 'daemon_status', status: socketStatus });
+}
+
+function classifyClose(event, opened, daemonUrl) {
+  if (event.code === 1008) {
+    return {
+      state: 'token_rejected',
+      daemonUrl,
+      message: 'Daemon rejected the token. Paste the current token from ~/.config/lecc/token.',
+      closeCode: event.code,
+      closeReason: event.reason || ''
+    };
+  }
+
+  if (!opened) {
+    return {
+      state: 'daemon_unavailable',
+      daemonUrl,
+      message: `Cannot reach daemon at ${daemonUrl}. Check whether lecc-daemon.service is running.`,
+      closeCode: event.code,
+      closeReason: event.reason || ''
+    };
+  }
+
+  return {
+    state: 'disconnected',
+    daemonUrl,
+    message: 'Daemon connection closed.',
+    closeCode: event.code,
+    closeReason: event.reason || ''
+  };
 }

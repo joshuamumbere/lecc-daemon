@@ -5,6 +5,13 @@ const DEFAULT_SETTINGS = {
 
 const state = {
   daemonState: 'disconnected',
+  connectionStatus: {
+    state: 'disconnected',
+    daemonUrl: DEFAULT_SETTINGS.daemonUrl,
+    message: 'Not connected.',
+    closeCode: null,
+    closeReason: ''
+  },
   logLines: [],
   pendingLogLines: [],
   isLogPaused: false,
@@ -29,7 +36,14 @@ const elements = {
   daemonUrl: document.querySelector('#daemonUrl'),
   token: document.querySelector('#token'),
   connectButton: document.querySelector('#connectButton'),
+  retryButton: document.querySelector('#retryButton'),
+  testConnection: document.querySelector('#testConnection'),
+  toggleToken: document.querySelector('#toggleToken'),
   echoButton: document.querySelector('#echoButton'),
+  connectionDiagnostics: document.querySelector('#connectionDiagnostics'),
+  diagnosticMessage: document.querySelector('#diagnosticMessage'),
+  diagnosticUrl: document.querySelector('#diagnosticUrl'),
+  diagnosticClose: document.querySelector('#diagnosticClose'),
   cacheActions: document.querySelector('#cacheActions'),
   commandOutput: document.querySelector('#commandOutput'),
   portMapRows: document.querySelector('#portMapRows'),
@@ -47,7 +61,7 @@ async function init() {
   bindActions();
   await loadSettings();
   const status = await chrome.runtime.sendMessage({ type: 'status' });
-  updateStatus(status.state || 'disconnected');
+  updateStatus(status.status || status.state || 'disconnected');
 }
 
 function bindTabs() {
@@ -70,6 +84,21 @@ function bindActions() {
     }
   });
 
+  elements.retryButton.addEventListener('click', async () => {
+    await chrome.runtime.sendMessage({ type: 'connect' });
+  });
+
+  elements.testConnection.addEventListener('click', async () => {
+    await saveConnectionSettings();
+    await chrome.runtime.sendMessage({ type: 'settings_updated' });
+  });
+
+  elements.toggleToken.addEventListener('click', () => {
+    const isHidden = elements.token.type === 'password';
+    elements.token.type = isHidden ? 'text' : 'password';
+    elements.toggleToken.textContent = isHidden ? 'Hide Token' : 'Reveal Token';
+  });
+
   elements.echoButton.addEventListener('click', async () => {
     await chrome.runtime.sendMessage({
       type: 'send',
@@ -78,10 +107,7 @@ function bindActions() {
   });
 
   elements.saveSettings.addEventListener('click', async () => {
-    await chrome.storage.local.set({
-      daemonUrl: elements.daemonUrl.value.trim() || DEFAULT_SETTINGS.daemonUrl,
-      token: elements.token.value.trim()
-    });
+    await saveConnectionSettings();
     await chrome.runtime.sendMessage({ type: 'settings_updated' });
   });
 
@@ -104,11 +130,24 @@ async function loadSettings() {
   const settings = await chrome.storage.local.get(DEFAULT_SETTINGS);
   elements.daemonUrl.value = settings.daemonUrl;
   elements.token.value = settings.token;
+  state.connectionStatus.daemonUrl = settings.daemonUrl;
+  renderDiagnostics();
+}
+
+async function saveConnectionSettings() {
+  const settings = {
+    daemonUrl: elements.daemonUrl.value.trim() || DEFAULT_SETTINGS.daemonUrl,
+    token: elements.token.value.trim()
+  };
+
+  await chrome.storage.local.set(settings);
+  state.connectionStatus.daemonUrl = settings.daemonUrl;
+  renderDiagnostics();
 }
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'daemon_status') {
-    updateStatus(message.state);
+    updateStatus(message.status || message.state);
   }
 
   if (message.type === 'daemon_message') {
@@ -184,20 +223,62 @@ function handleDaemonMessage(payload) {
 }
 
 function updateStatus(nextState) {
-  state.daemonState = nextState;
-  elements.status.dataset.state = nextState;
-  elements.status.textContent = humanizeState(nextState);
-  elements.connectButton.textContent = nextState === 'connected' ? 'Disconnect' : 'Connect';
-  elements.echoButton.disabled = nextState !== 'connected';
-  state.isLogStreaming = nextState === 'connected' && Boolean(state.context?.logPath);
+  const nextStatus = normalizeStatus(nextState);
+  state.connectionStatus = nextStatus;
+  state.daemonState = nextStatus.state;
+  elements.status.dataset.state = nextStatus.state;
+  elements.status.textContent = humanizeState(nextStatus.state);
+  elements.connectButton.textContent = nextStatus.state === 'connected' ? 'Disconnect' : 'Connect';
+  elements.retryButton.disabled = nextStatus.state === 'connected' || nextStatus.state === 'connecting';
+  elements.echoButton.disabled = nextStatus.state !== 'connected';
+  state.isLogStreaming = nextStatus.state === 'connected' && Boolean(state.context?.logPath);
+  renderDiagnostics();
   renderCacheActions();
   renderPortMap();
   renderLogStatus();
 
-  if (nextState === 'connected') {
+  if (nextStatus.state === 'connected') {
     requestCacheActions();
     requestPortMap();
   }
+}
+
+function normalizeStatus(status) {
+  if (typeof status === 'string') {
+    return {
+      ...state.connectionStatus,
+      state: status,
+      message: statusMessage(status)
+    };
+  }
+
+  return {
+    ...state.connectionStatus,
+    ...status,
+    state: status?.state || 'disconnected',
+    daemonUrl: status?.daemonUrl || elements.daemonUrl.value || DEFAULT_SETTINGS.daemonUrl,
+    message: status?.message || statusMessage(status?.state || 'disconnected'),
+    closeCode: status?.closeCode ?? null,
+    closeReason: status?.closeReason || ''
+  };
+}
+
+function renderDiagnostics() {
+  const status = state.connectionStatus;
+  elements.connectionDiagnostics.dataset.state = status.state;
+  elements.diagnosticMessage.textContent = status.message;
+  elements.diagnosticUrl.textContent = status.daemonUrl || elements.daemonUrl.value || DEFAULT_SETTINGS.daemonUrl;
+  elements.diagnosticClose.textContent = status.closeCode ? `${status.closeCode}${status.closeReason ? ` ${status.closeReason}` : ''}` : '-';
+}
+
+function statusMessage(status) {
+  if (status === 'connected') return 'Connected to the daemon.';
+  if (status === 'connecting') return 'Connecting to the daemon.';
+  if (status === 'missing_token') return 'Paste the daemon token from ~/.config/lecc/token before connecting.';
+  if (status === 'daemon_unavailable') return 'Cannot reach the daemon. Check the user service status.';
+  if (status === 'token_rejected') return 'Daemon rejected the token. Paste the current token from ~/.config/lecc/token.';
+  if (status === 'error') return 'Connection error.';
+  return 'Not connected.';
 }
 
 function renderContext() {

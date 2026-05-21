@@ -43,12 +43,36 @@
       </section>
 
       <section id="controls" class="panel">
+        <div id="connectionDiagnostics" class="diagnostics" data-state="disconnected">
+          <div>
+            <h2>Daemon Connection</h2>
+            <p id="diagnosticMessage">Not connected.</p>
+          </div>
+          <dl class="diagnostic-list">
+            <div>
+              <dt>URL</dt>
+              <dd id="diagnosticUrl">ws://127.0.0.1:17324</dd>
+            </div>
+            <div>
+              <dt>Close</dt>
+              <dd id="diagnosticClose">-</dd>
+            </div>
+          </dl>
+          <div id="serviceHelp" class="service-help">
+            <p>Service checks</p>
+            <code>systemctl --user status lecc-daemon.service</code>
+            <code>journalctl --user -u lecc-daemon.service -f</code>
+          </div>
+        </div>
         <div class="control-row">
           <div>
             <h2>Connection</h2>
             <p>Open or close the authenticated daemon socket.</p>
           </div>
-          <button id="connectButton" class="button" type="button">Connect</button>
+          <div class="button-pair">
+            <button id="connectButton" class="button" type="button">Connect</button>
+            <button id="retryButton" class="button secondary" type="button">Retry</button>
+          </div>
         </div>
         <div class="control-row">
           <div>
@@ -77,7 +101,12 @@
         <label class="field">
           <span>Auth Token</span>
           <input id="token" type="password" autocomplete="off" placeholder="Paste daemon token">
+          <small>Token file: ~/.config/lecc/token</small>
         </label>
+        <div class="settings-actions">
+          <button id="toggleToken" class="button secondary" type="button">Reveal Token</button>
+          <button id="testConnection" class="button secondary" type="button">Test Connection</button>
+        </div>
         <button id="saveSettings" class="button" type="button">Save Settings</button>
         <div class="settings-group">
           <div class="group-heading">
