@@ -6,6 +6,9 @@ const DEFAULT_SETTINGS = {
 const state = {
   daemonState: 'disconnected',
   logLines: [],
+  pendingLogLines: [],
+  isLogPaused: false,
+  isLogStreaming: false,
   commandLines: [],
   cacheActions: [],
   portMap: {},
@@ -17,8 +20,12 @@ const elements = {
   status: document.querySelector('#status'),
   contextName: document.querySelector('#contextName'),
   contextPath: document.querySelector('#contextPath'),
+  logStatus: document.querySelector('#logStatus'),
   logOutput: document.querySelector('#logOutput'),
   logFilter: document.querySelector('#logFilter'),
+  pauseLogs: document.querySelector('#pauseLogs'),
+  clearLogs: document.querySelector('#clearLogs'),
+  restartLogs: document.querySelector('#restartLogs'),
   daemonUrl: document.querySelector('#daemonUrl'),
   token: document.querySelector('#token'),
   connectButton: document.querySelector('#connectButton'),
@@ -88,6 +95,9 @@ function bindActions() {
   elements.reloadPortMap.addEventListener('click', requestPortMap);
   elements.savePortMap.addEventListener('click', savePortMap);
   elements.logFilter.addEventListener('input', renderLogs);
+  elements.pauseLogs.addEventListener('click', toggleLogPause);
+  elements.clearLogs.addEventListener('click', clearLogView);
+  elements.restartLogs.addEventListener('click', restartCurrentLog);
 }
 
 async function loadSettings() {
@@ -109,23 +119,28 @@ chrome.runtime.onMessage.addListener((message) => {
 function handleDaemonMessage(payload) {
   if (payload.type === 'context') {
     state.context = payload.context;
+    state.isLogStreaming = Boolean(payload.context?.logPath);
     renderContext();
+    renderLogStatus();
   }
 
   if (payload.type === 'log_line') {
-    state.logLines.push(...payload.data.split(/\r?\n/).filter(Boolean));
-    state.logLines = state.logLines.slice(-500);
-    renderLogs();
+    appendLogLines(payload.data.split(/\r?\n/).filter(Boolean));
   }
 
   if (payload.type === 'error') {
-    state.logLines.push(`[ERROR] ${payload.error}`);
-    renderLogs();
+    appendLogLines([`[ERROR] ${payload.error}`]);
+    state.isLogStreaming = false;
+    renderLogStatus('error');
   }
 
   if (payload.type === 'echo') {
-    state.logLines.push(`[ECHO] ${payload.data}`);
-    renderLogs();
+    appendLogLines([`[ECHO] ${payload.data}`]);
+  }
+
+  if (payload.type === 'log_stopped' || payload.type === 'log_closed') {
+    state.isLogStreaming = false;
+    renderLogStatus();
   }
 
   if (payload.type === 'cache_actions') {
@@ -174,8 +189,10 @@ function updateStatus(nextState) {
   elements.status.textContent = humanizeState(nextState);
   elements.connectButton.textContent = nextState === 'connected' ? 'Disconnect' : 'Connect';
   elements.echoButton.disabled = nextState !== 'connected';
+  state.isLogStreaming = nextState === 'connected' && Boolean(state.context?.logPath);
   renderCacheActions();
   renderPortMap();
+  renderLogStatus();
 
   if (nextState === 'connected') {
     requestCacheActions();
@@ -195,8 +212,121 @@ function renderLogs() {
     ? state.logLines.filter((line) => line.toLowerCase().includes(filter))
     : state.logLines;
 
-  elements.logOutput.textContent = lines.join('\n');
+  elements.logOutput.replaceChildren(...lines.map((line) => createLogRow(line)));
   elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+  renderLogStatus();
+}
+
+function appendLogLines(lines) {
+  if (lines.length === 0) return;
+
+  if (state.isLogPaused) {
+    state.pendingLogLines.push(...lines);
+    state.pendingLogLines = state.pendingLogLines.slice(-500);
+    renderLogStatus();
+    return;
+  }
+
+  state.logLines.push(...lines);
+  state.logLines = state.logLines.slice(-500);
+  renderLogs();
+}
+
+function createLogRow(line) {
+  const level = detectLogLevel(line);
+  const row = document.createElement('div');
+  row.className = 'log-line';
+  row.dataset.level = level;
+
+  const badge = document.createElement('span');
+  badge.className = 'log-badge';
+  badge.textContent = level === 'plain' ? '--' : level.toUpperCase();
+
+  const text = document.createElement('span');
+  text.className = 'log-text';
+  text.textContent = line;
+
+  row.append(badge, text);
+  return row;
+}
+
+function detectLogLevel(line) {
+  if (/\b(error|fatal|exception)\b/i.test(line)) return 'error';
+  if (/\b(warn|warning)\b/i.test(line)) return 'warn';
+  if (/\b(info|notice)\b/i.test(line)) return 'info';
+  if (/\b(debug|trace)\b/i.test(line)) return 'debug';
+  return 'plain';
+}
+
+function toggleLogPause() {
+  state.isLogPaused = !state.isLogPaused;
+
+  if (!state.isLogPaused && state.pendingLogLines.length > 0) {
+    state.logLines.push(...state.pendingLogLines);
+    state.logLines = state.logLines.slice(-500);
+    state.pendingLogLines = [];
+    renderLogs();
+    return;
+  }
+
+  renderLogStatus();
+}
+
+function clearLogView() {
+  state.logLines = [];
+  state.pendingLogLines = [];
+  renderLogs();
+}
+
+async function restartCurrentLog() {
+  if (state.daemonState !== 'connected' || !state.context?.port) return;
+
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'stop_log' }
+  });
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'set_context', port: state.context.port }
+  });
+}
+
+function renderLogStatus(forceState = '') {
+  const filteredCount = elements.logFilter.value.trim()
+    ? state.logLines.filter((line) => line.toLowerCase().includes(elements.logFilter.value.trim().toLowerCase())).length
+    : state.logLines.length;
+  const pending = state.pendingLogLines.length;
+
+  let statusState = forceState;
+  if (!statusState) {
+    if (state.isLogPaused) {
+      statusState = 'paused';
+    } else if (state.daemonState !== 'connected') {
+      statusState = 'idle';
+    } else if (!state.context?.logPath) {
+      statusState = 'idle';
+    } else if (state.isLogStreaming) {
+      statusState = 'streaming';
+    } else {
+      statusState = 'idle';
+    }
+  }
+
+  elements.logStatus.dataset.state = statusState;
+  elements.pauseLogs.textContent = state.isLogPaused ? 'Resume' : 'Pause';
+  elements.pauseLogs.disabled = state.daemonState !== 'connected' || !state.context?.logPath;
+  elements.restartLogs.disabled = state.daemonState !== 'connected' || !state.context?.port;
+
+  const suffix = pending > 0 ? `, ${pending} buffered` : '';
+  if (statusState === 'paused') {
+    elements.logStatus.textContent = `Paused, ${filteredCount}/500 lines${suffix}`;
+  } else if (statusState === 'streaming') {
+    elements.logStatus.textContent = `Streaming, ${filteredCount}/500 lines`;
+  } else if (statusState === 'error') {
+    elements.logStatus.textContent = `Log error, ${filteredCount}/500 lines`;
+  } else {
+    elements.logStatus.textContent = state.context?.logPath ? `Stopped, ${filteredCount}/500 lines` : 'No log mapped';
+  }
 }
 
 function renderCacheActions() {

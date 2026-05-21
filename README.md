@@ -65,6 +65,8 @@ LECC_ALLOWED_ORIGINS=chrome-extension://<extension-id>
 
 Open a localhost tab such as `http://localhost:3000`. If the port exists in `port-map.json`, the extension sends that context to the daemon and streams the mapped log file.
 
+The Logs tab supports pausing display updates, clearing the extension-side view, restarting the current stream, filtering lines, and highlighting common log levels.
+
 The Controls tab also lists cache actions reported by the daemon. Each action maps to a fixed command and argument list in `src/handlers/cache.js`; the extension only sends an action ID.
 
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.

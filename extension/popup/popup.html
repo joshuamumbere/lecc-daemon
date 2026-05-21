@@ -27,11 +27,19 @@
           <span id="contextName">No project context</span>
           <small id="contextPath">Open a localhost tab with a mapped port.</small>
         </div>
+        <div class="log-toolbar">
+          <span id="logStatus" class="log-status" data-state="idle">No log mapped</span>
+          <div class="toolbar-actions">
+            <button id="pauseLogs" class="button secondary compact" type="button">Pause</button>
+            <button id="clearLogs" class="button secondary compact" type="button">Clear</button>
+            <button id="restartLogs" class="button secondary compact" type="button">Restart</button>
+          </div>
+        </div>
         <label class="field">
           <span>Filter</span>
           <input id="logFilter" type="search" placeholder="error, warn, request id">
         </label>
-        <pre id="logOutput" class="terminal" aria-live="polite"></pre>
+        <div id="logOutput" class="terminal log-terminal" aria-live="polite"></div>
       </section>
 
       <section id="controls" class="panel">
