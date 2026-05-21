@@ -4,6 +4,7 @@ const DEFAULT_SETTINGS = {
 };
 const COMMAND_HISTORY_KEY = 'commandHistory';
 const COMMAND_HISTORY_LIMIT = 20;
+const EXPECTED_PROTOCOL = 'lecc.v1';
 
 const state = {
   daemonState: 'disconnected',
@@ -12,8 +13,12 @@ const state = {
     daemonUrl: DEFAULT_SETTINGS.daemonUrl,
     message: 'Not connected.',
     closeCode: null,
-    closeReason: ''
+    closeReason: '',
+    protocol: '',
+    daemonVersion: '',
+    capabilities: []
   },
+  capabilities: new Set(),
   logLines: [],
   pendingLogLines: [],
   isLogPaused: false,
@@ -234,6 +239,10 @@ function handleDaemonMessage(payload) {
     appendLogLines([`[ERROR] ${payload.error}`]);
     state.isLogStreaming = false;
     renderLogStatus('error');
+  }
+
+  if (payload.type === 'command_error') {
+    appendLogLines([`[ERROR] ${payload.cmd || 'command'}: ${payload.error}`]);
   }
 
   if (payload.type === 'echo') {
@@ -500,6 +509,7 @@ function updateStatus(nextState) {
   const nextStatus = normalizeStatus(nextState);
   state.connectionStatus = nextStatus;
   state.daemonState = nextStatus.state;
+  state.capabilities = new Set(nextStatus.capabilities || []);
   elements.status.dataset.state = nextStatus.state;
   elements.status.textContent = humanizeState(nextStatus.state);
   elements.connectButton.textContent = nextStatus.state === 'connected' ? 'Disconnect' : 'Connect';
@@ -515,13 +525,15 @@ function updateStatus(nextState) {
   renderLogStatus();
 
   if (nextStatus.state === 'connected') {
-    requestCacheActions();
-    requestPermissionActions();
-    requestPermissionPresets();
-    requestProcessActions();
-    requestAllowedServices();
-    requestPortMap();
-    requestServicesConfig();
+    if (hasCapability('cache_actions')) requestCacheActions();
+    if (hasCapability('permissions')) requestPermissionActions();
+    if (hasCapability('permission_presets')) requestPermissionPresets();
+    if (hasCapability('process_controls')) {
+      requestProcessActions();
+      requestAllowedServices();
+    }
+    if (hasCapability('editable_port_map')) requestPortMap();
+    if (hasCapability('editable_services')) requestServicesConfig();
   }
 }
 
@@ -541,7 +553,10 @@ function normalizeStatus(status) {
     daemonUrl: status?.daemonUrl || elements.daemonUrl.value || DEFAULT_SETTINGS.daemonUrl,
     message: status?.message || statusMessage(status?.state || 'disconnected'),
     closeCode: status?.closeCode ?? null,
-    closeReason: status?.closeReason || ''
+    closeReason: status?.closeReason || '',
+    protocol: status?.protocol || '',
+    daemonVersion: status?.daemonVersion || '',
+    capabilities: Array.isArray(status?.capabilities) ? status.capabilities : []
   };
 }
 
@@ -549,7 +564,8 @@ function renderDiagnostics() {
   const status = state.connectionStatus;
   elements.connectionDiagnostics.dataset.state = status.state;
   elements.diagnosticMessage.textContent = status.message;
-  elements.diagnosticUrl.textContent = status.daemonUrl || elements.daemonUrl.value || DEFAULT_SETTINGS.daemonUrl;
+  const protocol = status.protocol ? ` ${status.protocol}${status.daemonVersion ? ` / ${status.daemonVersion}` : ''}` : '';
+  elements.diagnosticUrl.textContent = `${status.daemonUrl || elements.daemonUrl.value || DEFAULT_SETTINGS.daemonUrl}${protocol}`;
   elements.diagnosticClose.textContent = status.closeCode ? `${status.closeCode}${status.closeReason ? ` ${status.closeReason}` : ''}` : '-';
 }
 
@@ -559,6 +575,7 @@ function statusMessage(status) {
   if (status === 'missing_token') return 'Paste the daemon token from ~/.config/lecc/token before connecting.';
   if (status === 'daemon_unavailable') return 'Cannot reach the daemon. Check the user service status.';
   if (status === 'token_rejected') return 'Daemon rejected the token. Paste the current token from ~/.config/lecc/token.';
+  if (status === 'protocol_mismatch') return `Daemon protocol is not compatible with ${EXPECTED_PROTOCOL}.`;
   if (status === 'error') return 'Connection error.';
   return 'Not connected.';
 }
@@ -693,6 +710,11 @@ function renderLogStatus(forceState = '') {
 }
 
 function renderCacheActions() {
+  if (!hasCapability('cache_actions')) {
+    elements.cacheActions.innerHTML = '<p class="empty">Daemon does not advertise cache actions.</p>';
+    return;
+  }
+
   if (state.daemonState !== 'connected') {
     elements.cacheActions.innerHTML = '<p class="empty">Connect to load actions.</p>';
     return;
@@ -728,6 +750,7 @@ function renderCacheActions() {
 }
 
 async function requestCacheActions() {
+  if (!hasCapability('cache_actions')) return;
   await chrome.runtime.sendMessage({
     type: 'send',
     payload: { cmd: 'list_cache_actions' }
@@ -775,6 +798,7 @@ async function runCacheAction(actionId) {
 }
 
 async function requestPermissionActions() {
+  if (!hasCapability('permissions')) return;
   await chrome.runtime.sendMessage({
     type: 'send',
     payload: { cmd: 'list_permission_actions' }
@@ -782,6 +806,7 @@ async function requestPermissionActions() {
 }
 
 async function requestPermissionPresets() {
+  if (!hasCapability('permission_presets')) return;
   await chrome.runtime.sendMessage({
     type: 'send',
     payload: { cmd: 'list_permission_presets' }
@@ -800,6 +825,14 @@ function renderPermissionPresets() {
 }
 
 function renderPermissionActions() {
+  if (!hasCapability('permissions')) {
+    elements.applyMode.disabled = true;
+    elements.applyOwner.disabled = true;
+    elements.applyPreset.disabled = true;
+    elements.useLogDirectory.disabled = true;
+    return;
+  }
+
   const isConnected = state.daemonState === 'connected';
   const targetPath = elements.permissionPath.value.trim();
   const presetId = elements.permissionPreset.value;
@@ -927,6 +960,7 @@ function parentPath(pathValue) {
 }
 
 async function requestProcessActions() {
+  if (!hasCapability('process_controls')) return;
   await chrome.runtime.sendMessage({
     type: 'send',
     payload: { cmd: 'list_process_actions' }
@@ -934,6 +968,7 @@ async function requestProcessActions() {
 }
 
 async function requestAllowedServices() {
+  if (!hasCapability('process_controls')) return;
   await chrome.runtime.sendMessage({
     type: 'send',
     payload: { cmd: 'list_allowed_services' }
@@ -956,6 +991,13 @@ function renderAllowedServices(preferredService = '') {
 }
 
 function renderProcessActions() {
+  if (!hasCapability('process_controls')) {
+    elements.startService.disabled = true;
+    elements.stopService.disabled = true;
+    elements.restartService.disabled = true;
+    return;
+  }
+
   const isConnected = state.daemonState === 'connected';
   const serviceId = elements.serviceSelect.value;
   setProcessButton(elements.startService, 'start_user_service', serviceId, 'Start', isConnected);
@@ -1022,6 +1064,7 @@ async function runProcessAction(actionId) {
 }
 
 async function requestServicesConfig() {
+  if (!hasCapability('editable_services')) return;
   if (state.daemonState !== 'connected') return;
   setServicesStatus('Loading services.');
   await chrome.runtime.sendMessage({
@@ -1031,6 +1074,14 @@ async function requestServicesConfig() {
 }
 
 function renderServicesSettings() {
+  if (!hasCapability('editable_services')) {
+    elements.serviceRows.innerHTML = '<p class="empty">Daemon does not advertise editable services.</p>';
+    elements.addService.disabled = true;
+    elements.saveServices.disabled = true;
+    elements.reloadServices.disabled = true;
+    return;
+  }
+
   if (state.daemonState !== 'connected') {
     elements.serviceRows.innerHTML = '<p class="empty">Connect to load services.</p>';
     elements.addService.disabled = true;
@@ -1091,6 +1142,7 @@ function readServiceRows() {
 }
 
 async function saveServices() {
+  if (!hasCapability('editable_services')) return;
   const rows = readServiceRows();
   const services = {};
 
@@ -1199,11 +1251,23 @@ function getProcessActionLabel(actionId) {
   return state.processActions.find((action) => action.id === actionId)?.label || actionId || 'Service action';
 }
 
+function hasCapability(capability) {
+  return state.capabilities.has(capability);
+}
+
 function getCommandKey(type, actionId, targetPath = '') {
   return `${type}:${actionId}:${targetPath}`;
 }
 
 function renderPortMap() {
+  if (!hasCapability('editable_port_map')) {
+    elements.portMapRows.innerHTML = '<p class="empty">Daemon does not advertise editable project mappings.</p>';
+    elements.savePortMap.disabled = true;
+    elements.reloadPortMap.disabled = true;
+    elements.addProject.disabled = true;
+    return;
+  }
+
   if (state.daemonState !== 'connected') {
     elements.portMapRows.innerHTML = '<p class="empty">Connect to load project mappings.</p>';
     elements.savePortMap.disabled = true;
@@ -1282,6 +1346,7 @@ function readPortMapRows() {
 }
 
 async function requestPortMap() {
+  if (!hasCapability('editable_port_map')) return;
   if (state.daemonState !== 'connected') return;
   setPortMapStatus('Loading project mappings.');
   await chrome.runtime.sendMessage({
@@ -1291,6 +1356,7 @@ async function requestPortMap() {
 }
 
 async function savePortMap() {
+  if (!hasCapability('editable_port_map')) return;
   const rows = readPortMapRows();
   const portMap = {};
 

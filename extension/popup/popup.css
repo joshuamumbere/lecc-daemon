@@ -93,7 +93,8 @@ p {
 .status[data-state="error"],
 .status[data-state="missing_token"],
 .status[data-state="daemon_unavailable"],
-.status[data-state="token_rejected"] {
+.status[data-state="token_rejected"],
+.status[data-state="protocol_mismatch"] {
   border-color: rgba(255, 107, 107, .7);
   color: var(--danger);
 }
@@ -314,6 +315,7 @@ input:focus {
 .diagnostics[data-state="missing_token"],
 .diagnostics[data-state="daemon_unavailable"],
 .diagnostics[data-state="token_rejected"],
+.diagnostics[data-state="protocol_mismatch"],
 .diagnostics[data-state="error"] {
   border-color: rgba(255, 107, 107, .55);
 }

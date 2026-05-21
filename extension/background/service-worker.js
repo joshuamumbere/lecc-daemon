@@ -2,6 +2,7 @@ const DEFAULT_SETTINGS = {
   daemonUrl: 'ws://127.0.0.1:17324',
   token: ''
 };
+const EXPECTED_PROTOCOL = 'lecc.v1';
 
 let socket = null;
 let socketStatus = {
@@ -9,7 +10,10 @@ let socketStatus = {
   daemonUrl: DEFAULT_SETTINGS.daemonUrl,
   message: 'Not connected',
   closeCode: null,
-  closeReason: ''
+  closeReason: '',
+  protocol: '',
+  daemonVersion: '',
+  capabilities: []
 };
 let reconnectTimer = null;
 let sawOpen = false;
@@ -80,11 +84,10 @@ async function connect() {
   socket.addEventListener('open', async () => {
     sawOpen = true;
     updateSocketStatus({
-      state: 'connected',
-      message: `Connected to ${settings.daemonUrl}.`
+      state: 'connecting',
+      message: `Connected to ${settings.daemonUrl}; waiting for protocol handshake.`
     });
     await sendToDaemon({ cmd: 'ping' });
-    await updateActiveTabContext();
   });
 
   socket.addEventListener('message', (event) => {
@@ -94,6 +97,11 @@ async function connect() {
     } catch {
       payload = { type: 'raw', data: event.data };
     }
+
+    if (payload.type === 'hello' || payload.type === 'pong') {
+      handleProtocolPayload(payload, settings.daemonUrl);
+    }
+
     broadcast({ type: 'daemon_message', payload });
   });
 
@@ -142,6 +150,10 @@ async function sendToDaemon(payload) {
     return { ok: false, error: 'Daemon socket is not connected', status: socketStatus };
   }
 
+  if (socketStatus.state === 'protocol_mismatch' && payload?.cmd !== 'ping') {
+    return { ok: false, error: 'Daemon protocol is not compatible', status: socketStatus };
+  }
+
   const { token } = await getSettings();
   socket.send(JSON.stringify({ ...payload, token }));
   return { ok: true, status: socketStatus };
@@ -180,6 +192,34 @@ function updateSocketStatus(nextStatus) {
     ...nextStatus
   };
   broadcast({ type: 'daemon_status', status: socketStatus });
+}
+
+function handleProtocolPayload(payload, daemonUrl) {
+  const protocol = payload.protocol || '';
+  const daemonVersion = payload.daemonVersion || '';
+  const capabilities = Array.isArray(payload.capabilities) ? payload.capabilities : [];
+
+  if (protocol !== EXPECTED_PROTOCOL) {
+    updateSocketStatus({
+      state: 'protocol_mismatch',
+      daemonUrl,
+      protocol,
+      daemonVersion,
+      capabilities,
+      message: `Daemon protocol ${protocol || 'unknown'} is not compatible with ${EXPECTED_PROTOCOL}.`
+    });
+    return;
+  }
+
+  updateSocketStatus({
+    state: 'connected',
+    daemonUrl,
+    protocol,
+    daemonVersion,
+    capabilities,
+    message: `Connected to ${daemonUrl} (${protocol}${daemonVersion ? `, daemon ${daemonVersion}` : ''}).`
+  });
+  updateActiveTabContext();
 }
 
 function classifyClose(event, opened, daemonUrl) {

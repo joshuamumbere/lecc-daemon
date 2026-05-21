@@ -3,6 +3,7 @@ import { listPermissionActions, listPermissionPresets, runPermissionAction, runP
 import { listAllowedServices, listProcessActions, loadAllowedServices, runProcessAction, saveAllowedServices } from './handlers/processes.js';
 import { tailLog } from './handlers/logs.js';
 import { loadPortMap, savePortMap } from './handlers/port-map.js';
+import { protocolPayload } from './protocol.js';
 
 const activeTails = new WeakMap();
 const activeCacheActions = new WeakMap();
@@ -20,6 +21,7 @@ export function createRouter(config) {
       case 'ping':
         send(ws, {
           type: 'pong',
+          ...protocolPayload(),
           daemonTime: new Date().toISOString(),
           context: ws.leccContext || null
         });
@@ -110,7 +112,12 @@ export function createRouter(config) {
         break;
 
       default:
-        send(ws, { type: 'error', error: 'Command is not allow-listed' });
+        send(ws, {
+          type: 'command_error',
+          cmd: message.cmd || '',
+          code: 'unknown_command',
+          error: 'Command is not allow-listed'
+        });
     }
   };
 }

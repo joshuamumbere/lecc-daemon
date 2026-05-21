@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { createRouter, send } from './router.js';
 import { ensureToken, getDaemonConfig, parseJsonMessage } from './config.js';
+import { protocolPayload } from './protocol.js';
 
 const config = getDaemonConfig();
 const token = ensureToken(config.tokenPath);
@@ -38,7 +39,7 @@ server.on('connection', (ws) => {
     route(ws, { cmd: 'stop_actions', token });
   });
 
-  send(ws, { type: 'hello', protocol: 'lecc.v1' });
+  send(ws, { type: 'hello', ...protocolPayload() });
 });
 
 server.on('listening', () => {

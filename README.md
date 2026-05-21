@@ -147,6 +147,29 @@ printf 'INFO demo log ready\n' >> /tmp/lecc-demo.log
 - Log paths are resolved and checked against allowed directories before `tail` is started.
 - The current extension command surface is intentionally small: connect, disconnect, context detection, log streaming, echo, cache action listing/execution, and validated project mapping edits.
 
+## Protocol
+
+The daemon and extension speak `lecc.v1`. The daemon advertises protocol metadata in `hello` and `pong` messages:
+
+```json
+{
+  "type": "hello",
+  "protocol": "lecc.v1",
+  "daemonVersion": "0.1.0",
+  "capabilities": [
+    "logs",
+    "cache_actions",
+    "permissions",
+    "permission_presets",
+    "process_controls",
+    "editable_port_map",
+    "editable_services"
+  ]
+}
+```
+
+The extension blocks command execution when the daemon protocol is incompatible. Unknown commands return structured `command_error` messages with an error code.
+
 ## Checks
 
 ```sh
