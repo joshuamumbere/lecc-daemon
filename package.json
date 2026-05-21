@@ -1,6 +1,6 @@
 {
   "name": "lecc-daemon",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local Environment Command Center daemon for the LECC browser extension.",
   "type": "module",
   "scripts": {
