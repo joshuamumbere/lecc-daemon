@@ -14,6 +14,29 @@ const PERMISSION_ACTIONS = {
   }
 };
 
+const PERMISSION_PRESETS = {
+  web_writable_dirs: {
+    label: 'Web Writable Dirs',
+    mode: '775',
+    description: 'Shared write access for runtime storage, uploads, and cache directories.'
+  },
+  config_files: {
+    label: 'Config Files',
+    mode: '664',
+    description: 'Readable and editable by owner/group for non-secret configuration files.'
+  },
+  public_assets: {
+    label: 'Public Assets',
+    mode: '755',
+    description: 'Readable and traversable public directories and deployed static assets.'
+  },
+  private_env: {
+    label: 'Private Env',
+    mode: '600',
+    description: 'Owner-only access for .env files and local secrets.'
+  }
+};
+
 const SAFE_MODES = new Set(['600', '640', '644', '660', '664', '700', '750', '755', '770', '775']);
 const OWNER_PATTERN = /^[a-z_][a-z0-9_-]*(\$)?(:[a-z_][a-z0-9_-]*(\$)?)?$/i;
 
@@ -22,6 +45,15 @@ export function listPermissionActions() {
     id,
     label: action.label,
     description: action.description
+  }));
+}
+
+export function listPermissionPresets() {
+  return Object.entries(PERMISSION_PRESETS).map(([id, preset]) => ({
+    id,
+    label: preset.label,
+    mode: preset.mode,
+    description: preset.description
   }));
 }
 
@@ -90,6 +122,89 @@ export function runPermissionAction(actionId, requestId, params, allowedDirs, se
       requestId,
       actionId,
       label: action.label,
+      targetPath: validation.targetPath,
+      ok: code === 0,
+      code
+    });
+  });
+
+  return child;
+}
+
+export function runPermissionPreset(presetId, requestId, params, allowedDirs, sendUpdate) {
+  const preset = PERMISSION_PRESETS[presetId];
+  const actionId = `permission_preset:${presetId}`;
+
+  if (!preset) {
+    sendFailure(sendUpdate, requestId, actionId, 'Permission preset is not allow-listed');
+    return null;
+  }
+
+  const validation = validatePermissionParams('chmod_project_path', {
+    ...params,
+    mode: preset.mode
+  }, allowedDirs);
+
+  if (!validation.ok) {
+    sendFailure(sendUpdate, requestId, actionId, validation.error, {
+      ...validation,
+      label: preset.label
+    });
+    return null;
+  }
+
+  sendUpdate({
+    type: 'permission_action_started',
+    requestId,
+    actionId,
+    presetId,
+    label: preset.label,
+    targetPath: validation.targetPath,
+    command: 'chmod',
+    args: [preset.mode, validation.targetPath]
+  });
+
+  const child = spawn('chmod', [preset.mode, validation.targetPath], {
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  child.stdout.on('data', (chunk) => {
+    sendUpdate({
+      type: 'permission_action_output',
+      requestId,
+      actionId,
+      presetId,
+      stream: 'stdout',
+      data: chunk.toString()
+    });
+  });
+
+  child.stderr.on('data', (chunk) => {
+    sendUpdate({
+      type: 'permission_action_output',
+      requestId,
+      actionId,
+      presetId,
+      stream: 'stderr',
+      data: chunk.toString()
+    });
+  });
+
+  child.on('error', (error) => {
+    sendFailure(sendUpdate, requestId, actionId, error.message, {
+      label: preset.label,
+      targetPath: validation.targetPath
+    });
+  });
+
+  child.on('close', (code) => {
+    sendUpdate({
+      type: 'permission_action_finished',
+      requestId,
+      actionId,
+      presetId,
+      label: preset.label,
       targetPath: validation.targetPath,
       ok: code === 0,
       code

@@ -22,6 +22,7 @@ const state = {
   commandHistory: [],
   cacheActions: [],
   permissionActions: [],
+  permissionPresets: [],
   portMap: {},
   runningActions: new Set(),
   context: null
@@ -52,6 +53,9 @@ const elements = {
   permissionPath: document.querySelector('#permissionPath'),
   permissionMode: document.querySelector('#permissionMode'),
   permissionOwner: document.querySelector('#permissionOwner'),
+  permissionPreset: document.querySelector('#permissionPreset'),
+  applyPreset: document.querySelector('#applyPreset'),
+  useLogDirectory: document.querySelector('#useLogDirectory'),
   applyMode: document.querySelector('#applyMode'),
   applyOwner: document.querySelector('#applyOwner'),
   commandHistory: document.querySelector('#commandHistory'),
@@ -133,9 +137,12 @@ function bindActions() {
   elements.savePortMap.addEventListener('click', savePortMap);
   elements.applyMode.addEventListener('click', () => runPermissionAction('chmod_project_path'));
   elements.applyOwner.addEventListener('click', () => runPermissionAction('chown_project_path'));
+  elements.applyPreset.addEventListener('click', runPermissionPreset);
+  elements.useLogDirectory.addEventListener('click', useCurrentLogDirectory);
   elements.permissionPath.addEventListener('input', renderPermissionActions);
   elements.permissionMode.addEventListener('input', renderPermissionActions);
   elements.permissionOwner.addEventListener('input', renderPermissionActions);
+  elements.permissionPreset.addEventListener('change', renderPermissionActions);
   elements.logFilter.addEventListener('input', renderLogs);
   elements.pauseLogs.addEventListener('click', toggleLogPause);
   elements.clearLogs.addEventListener('click', clearLogView);
@@ -283,6 +290,12 @@ function handleDaemonMessage(payload) {
     renderPermissionActions();
   }
 
+  if (payload.type === 'permission_presets') {
+    state.permissionPresets = payload.presets || [];
+    renderPermissionPresets();
+    renderPermissionActions();
+  }
+
   if (payload.type === 'permission_action_started') {
     const key = getCommandKey('permission', payload.actionId, payload.targetPath);
     state.runningActions.add(key);
@@ -383,6 +396,7 @@ function updateStatus(nextState) {
   if (nextStatus.state === 'connected') {
     requestCacheActions();
     requestPermissionActions();
+    requestPermissionPresets();
     requestPortMap();
   }
 }
@@ -643,13 +657,35 @@ async function requestPermissionActions() {
   });
 }
 
+async function requestPermissionPresets() {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'list_permission_presets' }
+  });
+}
+
+function renderPermissionPresets() {
+  if (state.permissionPresets.length === 0) {
+    elements.permissionPreset.replaceChildren(new Option('No presets loaded', ''));
+    return;
+  }
+
+  elements.permissionPreset.replaceChildren(...state.permissionPresets.map((preset) => (
+    new Option(`${preset.label} (${preset.mode})`, preset.id)
+  )));
+}
+
 function renderPermissionActions() {
   const isConnected = state.daemonState === 'connected';
   const targetPath = elements.permissionPath.value.trim();
+  const presetId = elements.permissionPreset.value;
   elements.applyMode.disabled = !isConnected || !targetPath || state.runningActions.has(getCommandKey('permission', 'chmod_project_path', targetPath));
   elements.applyOwner.disabled = !isConnected || !targetPath || state.runningActions.has(getCommandKey('permission', 'chown_project_path', targetPath));
+  elements.applyPreset.disabled = !isConnected || !targetPath || !presetId || state.runningActions.has(getCommandKey('permission', `permission_preset:${presetId}`, targetPath));
+  elements.useLogDirectory.disabled = !state.context?.logPath;
   elements.applyMode.textContent = state.runningActions.has(getCommandKey('permission', 'chmod_project_path', targetPath)) ? 'Applying' : 'Apply Mode';
   elements.applyOwner.textContent = state.runningActions.has(getCommandKey('permission', 'chown_project_path', targetPath)) ? 'Applying' : 'Apply Owner';
+  elements.applyPreset.textContent = state.runningActions.has(getCommandKey('permission', `permission_preset:${presetId}`, targetPath)) ? 'Applying' : 'Apply Preset';
 }
 
 async function runPermissionAction(actionId) {
@@ -700,6 +736,70 @@ async function runPermissionAction(actionId) {
     });
     renderPermissionActions();
   }
+}
+
+async function runPermissionPreset() {
+  const targetPath = elements.permissionPath.value.trim();
+  const presetId = elements.permissionPreset.value;
+  const actionId = `permission_preset:${presetId}`;
+  const key = getCommandKey('permission', actionId, targetPath);
+  if (!presetId || state.runningActions.has(key)) return;
+
+  const preset = state.permissionPresets.find((item) => item.id === presetId);
+  const requestId = createRequestId(actionId);
+  const label = preset?.label || presetId;
+  upsertCommandRun({
+    type: 'permission',
+    requestId,
+    actionId,
+    label,
+    targetPath,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    endedAt: '',
+    code: null,
+    error: ''
+  });
+  state.runningActions.add(key);
+  renderPermissionActions();
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: {
+      cmd: 'run_permission_preset',
+      presetId,
+      requestId,
+      params: { targetPath }
+    }
+  });
+
+  if (!result?.ok) {
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'permission',
+      requestId,
+      actionId,
+      label,
+      targetPath,
+      status: 'failed',
+      endedAt: new Date().toISOString(),
+      error: result?.error || 'Daemon socket is not connected'
+    });
+    renderPermissionActions();
+  }
+}
+
+function useCurrentLogDirectory() {
+  if (!state.context?.logPath) return;
+  elements.permissionPath.value = parentPath(state.context.logPath);
+  renderPermissionActions();
+}
+
+function parentPath(pathValue) {
+  const normalized = String(pathValue || '').replace(/\/+$/, '');
+  const index = normalized.lastIndexOf('/');
+  if (index <= 0) return normalized || '/';
+  return normalized.slice(0, index);
 }
 
 function upsertCommandRun(nextRun) {

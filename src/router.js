@@ -1,5 +1,5 @@
 import { listCacheActions, runCacheAction } from './handlers/cache.js';
-import { listPermissionActions, runPermissionAction } from './handlers/permissions.js';
+import { listPermissionActions, listPermissionPresets, runPermissionAction, runPermissionPreset } from './handlers/permissions.js';
 import { tailLog } from './handlers/logs.js';
 import { loadPortMap, savePortMap } from './handlers/port-map.js';
 
@@ -62,8 +62,16 @@ export function createRouter(config) {
         send(ws, { type: 'permission_actions', actions: listPermissionActions() });
         break;
 
+      case 'list_permission_presets':
+        send(ws, { type: 'permission_presets', presets: listPermissionPresets() });
+        break;
+
       case 'run_permission_action':
         runAllowedPermissionAction(ws, config, message);
+        break;
+
+      case 'run_permission_preset':
+        runAllowedPermissionPreset(ws, config, message);
         break;
 
       case 'echo':
@@ -149,6 +157,30 @@ function runAllowedPermissionAction(ws, config, message) {
   const requestId = String(message.requestId || `${Date.now()}-${actionId || 'permission-action'}`);
   const child = runPermissionAction(
     actionId,
+    requestId,
+    message.params || {},
+    config.allowedPermissionDirs,
+    (payload) => send(ws, payload)
+  );
+  if (!child) return;
+
+  const actions = activePermissionActions.get(ws) || new Set();
+  actions.add(child);
+  activePermissionActions.set(ws, actions);
+
+  child.on('close', () => {
+    actions.delete(child);
+    if (actions.size === 0) {
+      activePermissionActions.delete(ws);
+    }
+  });
+}
+
+function runAllowedPermissionPreset(ws, config, message) {
+  const presetId = String(message.presetId || '');
+  const requestId = String(message.requestId || `${Date.now()}-${presetId || 'permission-preset'}`);
+  const child = runPermissionPreset(
+    presetId,
     requestId,
     message.params || {},
     config.allowedPermissionDirs,

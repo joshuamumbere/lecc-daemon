@@ -27,7 +27,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -204,7 +205,8 @@ p {
   overflow-wrap: anywhere;
 }
 
-input {
+input,
+select {
   width: 100%;
   height: 38px;
   border: 1px solid var(--line);

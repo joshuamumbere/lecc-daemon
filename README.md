@@ -120,6 +120,8 @@ Cache command runs use request IDs and are tracked in a recent command history. 
 
 The Permissions Repair section supports non-recursive `chmod` and `chown` operations on paths inside `LECC_ALLOWED_PERMISSION_DIRS`. Modes are restricted to a small safe set, and owner values must be plain `user` or `user:group` strings.
 
+Permission presets are daemon-owned allow-list entries. The extension sends a preset ID and target path; the daemon maps the preset to a fixed mode such as `775`, `664`, `755`, or `600`.
+
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.
 
 ## Demo Log
