@@ -59,10 +59,17 @@ jobs:
       - name: Build extension
         run: npm run build:extension
 
+      - name: Verify release artifact
+        run: |
+          PACKAGE_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          test -f "dist/lecc-daemon-extension-v${PACKAGE_VERSION}.zip"
+
       - name: Publish GitHub Release
+        if: ${{ success() }}
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
           target_commitish: ${{ github.sha }}
           files: dist/*.zip
+          fail_on_unmatched_files: true
           generate_release_notes: true
