@@ -174,5 +174,33 @@ The extension blocks command execution when the daemon protocol is incompatible.
 
 ```sh
 npm run check
-npm test
+npm run build:extension
 ```
+
+`npm run check` runs ESLint, JavaScript syntax checks, and the Node test suite.
+`npm run build:extension` creates a Chrome-compatible MV3 extension zip in `dist/`.
+
+## Contributing
+
+This project is open source under the MIT License. Contributions are welcome through issues and pull requests.
+
+Before opening a pull request:
+
+```sh
+npm ci
+npm run check
+npm run build:extension
+```
+
+See `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` for contribution expectations, security reporting, and release details.
+
+## Releases
+
+GitHub Actions runs CI on pushes and pull requests. Pushing a version tag creates a GitHub Release and attaches the built extension zip:
+
+```sh
+npm version patch
+git push origin main --follow-tags
+```
+
+Release tags must match `v*`, such as `v0.1.1`.
