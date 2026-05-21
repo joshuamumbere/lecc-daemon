@@ -174,4 +174,5 @@ The extension blocks command execution when the daemon protocol is incompatible.
 
 ```sh
 npm run check
+npm test
 ```

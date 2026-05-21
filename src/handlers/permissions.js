@@ -214,7 +214,7 @@ export function runPermissionPreset(presetId, requestId, params, allowedDirs, se
   return child;
 }
 
-function validatePermissionParams(actionId, params = {}, allowedDirs) {
+export function validatePermissionParams(actionId, params = {}, allowedDirs) {
   const targetPath = resolve(String(params.targetPath || '').trim());
 
   if (!String(params.targetPath || '').trim()) {

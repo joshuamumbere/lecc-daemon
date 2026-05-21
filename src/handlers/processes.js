@@ -180,7 +180,7 @@ function normalizeServices(services) {
   );
 }
 
-function validateService(rawServiceId, services) {
+export function validateService(rawServiceId, services) {
   const serviceId = String(rawServiceId || '').trim();
 
   if (!SERVICE_PATTERN.test(serviceId)) {
