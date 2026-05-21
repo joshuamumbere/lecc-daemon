@@ -196,7 +196,9 @@ See `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and `SECURITY.md` for contribution 
 
 ## Releases
 
-GitHub Actions runs CI on pushes and pull requests. Pushing a version tag creates a GitHub Release and attaches the built extension zip:
+GitHub Actions runs CI checks on pushes and pull requests. Releases are separate: they are created only from a version tag or from the manual Release workflow.
+
+To release from the command line, make sure `package.json` and `extension/manifest.json` have the same version, then create and push a `v*` tag:
 
 ```sh
 npm version patch
@@ -204,3 +206,5 @@ git push origin main --follow-tags
 ```
 
 Release tags must match `v*`, such as `v0.1.1`.
+
+You can also open GitHub Actions, run the `Release` workflow manually, and provide a tag that exactly matches the package version, such as `v0.1.1`.

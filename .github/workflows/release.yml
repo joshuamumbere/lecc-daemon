@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to create, for example v0.1.1
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -26,6 +32,27 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate release tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RELEASE_TAG="${{ inputs.tag }}"
+          else
+            RELEASE_TAG="${GITHUB_REF_NAME}"
+          fi
+
+          PACKAGE_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('package.json', 'utf8')).version")"
+          MANIFEST_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('extension/manifest.json', 'utf8')).version")"
+
+          if [ "$PACKAGE_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "package.json version ($PACKAGE_VERSION) must match extension/manifest.json version ($MANIFEST_VERSION)" >&2
+            exit 1
+          fi
+
+          if [ "$RELEASE_TAG" != "v$PACKAGE_VERSION" ]; then
+            echo "release tag ($RELEASE_TAG) must match package version (v$PACKAGE_VERSION)" >&2
+            exit 1
+          fi
+
       - name: Run checks
         run: npm run check
 
@@ -35,5 +62,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: dist/*.zip
           generate_release_notes: true

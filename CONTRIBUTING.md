@@ -45,7 +45,7 @@ npm run build:extension
 
 ## Release Process
 
-Releases are created from version tags:
+CI checks do not create releases by themselves. Releases are created from version tags:
 
 ```sh
 npm version patch
@@ -53,3 +53,5 @@ git push origin main --follow-tags
 ```
 
 Tags matching `v*` trigger the release workflow. The workflow runs the full check suite, builds the extension zip, and attaches the zip to the GitHub Release.
+
+The Release workflow can also be run manually from GitHub Actions by entering a tag that exactly matches the package version, such as `v0.1.1`.
