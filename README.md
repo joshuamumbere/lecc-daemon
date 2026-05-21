@@ -26,6 +26,9 @@ This repository currently contains authenticated daemon messaging, editable port
 │       ├── popup.html
 │       ├── popup.css
 │       └── popup.js
+├── scripts/
+│   ├── install.sh            # installs systemd --user service
+│   └── uninstall.sh          # removes systemd --user service
 └── port-map.json             # maps localhost ports to project names/logs
 ```
 
@@ -53,6 +56,47 @@ LECC_TOKEN_PATH=/path/to/token
 LECC_PORT_MAP=/path/to/port-map.json
 LECC_ALLOWED_LOG_DIRS=/var/log,/tmp,/home/me/projects
 LECC_ALLOWED_ORIGINS=chrome-extension://<extension-id>
+```
+
+## Install As A User Service
+
+Install the daemon as a `systemd --user` service:
+
+```sh
+npm run install:service
+```
+
+This copies the app to `~/.local/share/lecc-daemon`, installs production dependencies there, writes `~/.config/systemd/user/lecc-daemon.service`, and copies the default `port-map.json` to `~/.config/lecc/port-map.json` if one does not already exist.
+
+Start it:
+
+```sh
+systemctl --user enable --now lecc-daemon.service
+```
+
+Install and start in one step:
+
+```sh
+scripts/install.sh --start
+```
+
+Check status and logs:
+
+```sh
+systemctl --user status lecc-daemon.service
+journalctl --user -u lecc-daemon.service -f
+```
+
+Remove the service and installed app files:
+
+```sh
+npm run uninstall:service
+```
+
+Remove service, installed app files, and config:
+
+```sh
+scripts/uninstall.sh --purge-config
 ```
 
 ## Load The Extension
