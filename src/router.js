@@ -1,15 +1,18 @@
 import { listCacheActions, runCacheAction } from './handlers/cache.js';
 import { listPermissionActions, listPermissionPresets, runPermissionAction, runPermissionPreset } from './handlers/permissions.js';
+import { listAllowedServices, listProcessActions, loadAllowedServices, runProcessAction } from './handlers/processes.js';
 import { tailLog } from './handlers/logs.js';
 import { loadPortMap, savePortMap } from './handlers/port-map.js';
 
 const activeTails = new WeakMap();
 const activeCacheActions = new WeakMap();
 const activePermissionActions = new WeakMap();
+const activeProcessActions = new WeakMap();
 
 export function createRouter(config) {
   const state = {
-    portMap: loadPortMap(config.portMapPath)
+    portMap: loadPortMap(config.portMapPath),
+    services: loadAllowedServices(config.servicesPath)
   };
 
   return async function route(ws, message) {
@@ -47,6 +50,7 @@ export function createRouter(config) {
       case 'stop_actions':
         stopCacheActions(ws);
         stopPermissionActions(ws);
+        stopProcessActions(ws);
         send(ws, { type: 'actions_stopped' });
         break;
 
@@ -72,6 +76,19 @@ export function createRouter(config) {
 
       case 'run_permission_preset':
         runAllowedPermissionPreset(ws, config, message);
+        break;
+
+      case 'list_process_actions':
+        send(ws, { type: 'process_actions', actions: listProcessActions() });
+        break;
+
+      case 'list_allowed_services':
+        state.services = loadAllowedServices(config.servicesPath);
+        send(ws, { type: 'allowed_services', services: listAllowedServices(state.services) });
+        break;
+
+      case 'run_process_action':
+        runAllowedProcessAction(ws, state, message);
         break;
 
       case 'echo':
@@ -210,6 +227,42 @@ function stopPermissionActions(ws) {
     }
   });
   activePermissionActions.delete(ws);
+}
+
+function runAllowedProcessAction(ws, state, message) {
+  const actionId = String(message.actionId || '');
+  const requestId = String(message.requestId || `${Date.now()}-${actionId || 'process-action'}`);
+  const child = runProcessAction(
+    actionId,
+    requestId,
+    message.serviceId,
+    state.services,
+    (payload) => send(ws, payload)
+  );
+  if (!child) return;
+
+  const actions = activeProcessActions.get(ws) || new Set();
+  actions.add(child);
+  activeProcessActions.set(ws, actions);
+
+  child.on('close', () => {
+    actions.delete(child);
+    if (actions.size === 0) {
+      activeProcessActions.delete(ws);
+    }
+  });
+}
+
+function stopProcessActions(ws) {
+  const actions = activeProcessActions.get(ws);
+  if (!actions) return;
+
+  actions.forEach((child) => {
+    if (!child.killed) {
+      child.kill();
+    }
+  });
+  activeProcessActions.delete(ws);
 }
 
 function saveNextPortMap(ws, config, state, message) {

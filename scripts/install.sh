@@ -19,6 +19,7 @@ Environment overrides:
   LECC_INSTALL_DIR        App install directory, default: ~/.local/share/lecc-daemon
   LECC_CONFIG_DIR         Daemon config directory, default: ~/.config/lecc
   LECC_PORT               Daemon WebSocket port, default: 17324
+  LECC_SERVICES           Service allow-list JSON, default: ~/.config/lecc/services.json
   LECC_ALLOWED_LOG_DIRS   Comma-separated allowed log directories
   LECC_ALLOWED_PERMISSION_DIRS
                           Comma-separated directories for chmod/chown repairs
@@ -84,6 +85,7 @@ Environment=NODE_ENV=production
 Environment=LECC_CONFIG_DIR=$CONFIG_DIR
 Environment=LECC_PORT=${LECC_PORT:-17324}
 Environment=LECC_PORT_MAP=$CONFIG_DIR/port-map.json
+Environment=LECC_SERVICES=${LECC_SERVICES:-$CONFIG_DIR/services.json}
 Environment=LECC_ALLOWED_LOG_DIRS=${LECC_ALLOWED_LOG_DIRS:-/var/log,/tmp,$HOME/projects}
 Environment=LECC_ALLOWED_PERMISSION_DIRS=${LECC_ALLOWED_PERMISSION_DIRS:-/tmp,$HOME/projects}
 Environment=LECC_ALLOWED_ORIGINS=${LECC_ALLOWED_ORIGINS:-}
@@ -99,6 +101,11 @@ UNIT
 if [[ ! -f "$CONFIG_DIR/port-map.json" ]]; then
   cp "$INSTALL_DIR/port-map.json" "$CONFIG_DIR/port-map.json"
   chmod 600 "$CONFIG_DIR/port-map.json"
+fi
+
+if [[ ! -f "$CONFIG_DIR/services.json" ]]; then
+  cp "$INSTALL_DIR/services.json" "$CONFIG_DIR/services.json"
+  chmod 600 "$CONFIG_DIR/services.json"
 fi
 
 systemctl --user daemon-reload

@@ -10,6 +10,7 @@ export function getDaemonConfig() {
   const configDir = process.env.LECC_CONFIG_DIR || DEFAULT_CONFIG_DIR;
   const tokenPath = process.env.LECC_TOKEN_PATH || join(configDir, 'token');
   const portMapPath = resolve(process.env.LECC_PORT_MAP || 'port-map.json');
+  const servicesPath = resolve(process.env.LECC_SERVICES || 'services.json');
 
   const allowedLogDirs = parseList(process.env.LECC_ALLOWED_LOG_DIRS, ['/var/log', join(homedir(), 'projects'), '/tmp']);
 
@@ -18,6 +19,7 @@ export function getDaemonConfig() {
     port: Number.parseInt(process.env.LECC_PORT || `${DEFAULT_PORT}`, 10),
     tokenPath,
     portMapPath,
+    servicesPath,
     allowedOrigins: parseOrigins(process.env.LECC_ALLOWED_ORIGINS),
     allowedLogDirs,
     allowedPermissionDirs: parseList(process.env.LECC_ALLOWED_PERMISSION_DIRS, allowedLogDirs)

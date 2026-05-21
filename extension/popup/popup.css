@@ -486,6 +486,12 @@ input:focus {
   gap: 8px;
 }
 
+.service-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
 .permission-grid {
   display: grid;
   grid-template-columns: 100px minmax(0, 1fr);

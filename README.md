@@ -29,6 +29,7 @@ This repository currently contains authenticated daemon messaging, editable port
 ├── scripts/
 │   ├── install.sh            # installs systemd --user service
 │   └── uninstall.sh          # removes systemd --user service
+├── services.json             # allow-listed systemd user services
 └── port-map.json             # maps localhost ports to project names/logs
 ```
 
@@ -54,6 +55,7 @@ Useful environment overrides:
 LECC_PORT=17324
 LECC_TOKEN_PATH=/path/to/token
 LECC_PORT_MAP=/path/to/port-map.json
+LECC_SERVICES=/path/to/services.json
 LECC_ALLOWED_LOG_DIRS=/var/log,/tmp,/home/me/projects
 LECC_ALLOWED_PERMISSION_DIRS=/tmp,/home/me/projects
 LECC_ALLOWED_ORIGINS=chrome-extension://<extension-id>
@@ -121,6 +123,8 @@ Cache command runs use request IDs and are tracked in a recent command history. 
 The Permissions Repair section supports non-recursive `chmod` and `chown` operations on paths inside `LECC_ALLOWED_PERMISSION_DIRS`. Modes are restricted to a small safe set, and owner values must be plain `user` or `user:group` strings.
 
 Permission presets are daemon-owned allow-list entries. The extension sends a preset ID and target path; the daemon maps the preset to a fixed mode such as `775`, `664`, `755`, or `600`.
+
+Service controls use `systemctl --user` and only operate on services listed in `services.json`. Service names must be valid `.service` unit names and are never executed through a shell.
 
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.
 

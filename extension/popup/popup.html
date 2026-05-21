@@ -125,6 +125,21 @@
         </div>
         <div class="control-group">
           <div class="group-heading">
+            <h2>Service Controls</h2>
+            <p>Allow-listed systemd user services only.</p>
+          </div>
+          <label class="field">
+            <span>Service</span>
+            <select id="serviceSelect"></select>
+          </label>
+          <div class="service-actions">
+            <button id="startService" class="button secondary" type="button">Start</button>
+            <button id="stopService" class="button secondary" type="button">Stop</button>
+            <button id="restartService" class="button" type="button">Restart</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="group-heading">
             <h2>Command History</h2>
             <p>Last 20 command runs.</p>
           </div>

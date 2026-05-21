@@ -23,6 +23,8 @@ const state = {
   cacheActions: [],
   permissionActions: [],
   permissionPresets: [],
+  processActions: [],
+  allowedServices: [],
   portMap: {},
   runningActions: new Set(),
   context: null
@@ -58,6 +60,10 @@ const elements = {
   useLogDirectory: document.querySelector('#useLogDirectory'),
   applyMode: document.querySelector('#applyMode'),
   applyOwner: document.querySelector('#applyOwner'),
+  serviceSelect: document.querySelector('#serviceSelect'),
+  startService: document.querySelector('#startService'),
+  stopService: document.querySelector('#stopService'),
+  restartService: document.querySelector('#restartService'),
   commandHistory: document.querySelector('#commandHistory'),
   commandOutput: document.querySelector('#commandOutput'),
   portMapRows: document.querySelector('#portMapRows'),
@@ -143,6 +149,10 @@ function bindActions() {
   elements.permissionMode.addEventListener('input', renderPermissionActions);
   elements.permissionOwner.addEventListener('input', renderPermissionActions);
   elements.permissionPreset.addEventListener('change', renderPermissionActions);
+  elements.serviceSelect.addEventListener('change', renderProcessActions);
+  elements.startService.addEventListener('click', () => runProcessAction('start_user_service'));
+  elements.stopService.addEventListener('click', () => runProcessAction('stop_user_service'));
+  elements.restartService.addEventListener('click', () => runProcessAction('restart_user_service'));
   elements.logFilter.addEventListener('input', renderLogs);
   elements.pauseLogs.addEventListener('click', toggleLogPause);
   elements.clearLogs.addEventListener('click', clearLogView);
@@ -360,6 +370,81 @@ function handleDaemonMessage(payload) {
     renderPermissionActions();
   }
 
+  if (payload.type === 'process_actions') {
+    state.processActions = payload.actions || [];
+    renderProcessActions();
+  }
+
+  if (payload.type === 'allowed_services') {
+    state.allowedServices = payload.services || [];
+    renderAllowedServices();
+    renderProcessActions();
+  }
+
+  if (payload.type === 'process_action_started') {
+    const key = getCommandKey('process', payload.actionId, payload.serviceId);
+    state.runningActions.add(key);
+    upsertCommandRun({
+      type: 'process',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label,
+      serviceId: payload.serviceId,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      endedAt: '',
+      code: null,
+      error: '',
+      command: payload.command,
+      args: payload.args || []
+    });
+    appendCommandLine(`[${payload.requestId}] [START] ${payload.label}`);
+    renderProcessActions();
+  }
+
+  if (payload.type === 'process_action_output') {
+    payload.data.split(/\r?\n/).filter(Boolean).forEach((line) => {
+      appendCommandLine(`[${payload.requestId}] [${payload.stream}] ${line}`);
+    });
+  }
+
+  if (payload.type === 'process_action_finished') {
+    const key = getCommandKey('process', payload.actionId, payload.serviceId);
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'process',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getProcessActionLabel(payload.actionId),
+      serviceId: payload.serviceId,
+      status: payload.ok ? 'succeeded' : 'failed',
+      endedAt: new Date().toISOString(),
+      code: payload.code ?? null,
+      error: payload.error || ''
+    });
+    appendCommandLine(payload.ok ? `[${payload.requestId}] [DONE] ${payload.actionId} ${payload.serviceId}` : `[${payload.requestId}] [FAILED] ${payload.actionId} ${payload.serviceId} (${payload.code ?? payload.error})`);
+    renderProcessActions();
+  }
+
+  if (payload.type === 'process_action_failed') {
+    const key = getCommandKey('process', payload.actionId, payload.serviceId);
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'process',
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getProcessActionLabel(payload.actionId),
+      serviceId: payload.serviceId,
+      status: 'failed',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      code: null,
+      error: payload.error || 'Command failed'
+    });
+    appendCommandLine(`[${payload.requestId}] [FAILED] ${payload.actionId}: ${payload.error}`);
+    renderProcessActions();
+  }
+
   if (payload.type === 'port_map') {
     state.portMap = payload.portMap || {};
     renderPortMap();
@@ -390,6 +475,7 @@ function updateStatus(nextState) {
   renderDiagnostics();
   renderCacheActions();
   renderPermissionActions();
+  renderProcessActions();
   renderPortMap();
   renderLogStatus();
 
@@ -397,6 +483,8 @@ function updateStatus(nextState) {
     requestCacheActions();
     requestPermissionActions();
     requestPermissionPresets();
+    requestProcessActions();
+    requestAllowedServices();
     requestPortMap();
   }
 }
@@ -802,6 +890,97 @@ function parentPath(pathValue) {
   return normalized.slice(0, index);
 }
 
+async function requestProcessActions() {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'list_process_actions' }
+  });
+}
+
+async function requestAllowedServices() {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'list_allowed_services' }
+  });
+}
+
+function renderAllowedServices() {
+  if (state.allowedServices.length === 0) {
+    elements.serviceSelect.replaceChildren(new Option('No services allow-listed', ''));
+    return;
+  }
+
+  elements.serviceSelect.replaceChildren(...state.allowedServices.map((service) => (
+    new Option(`${service.label} (${service.id})`, service.id)
+  )));
+}
+
+function renderProcessActions() {
+  const isConnected = state.daemonState === 'connected';
+  const serviceId = elements.serviceSelect.value;
+  setProcessButton(elements.startService, 'start_user_service', serviceId, 'Start', isConnected);
+  setProcessButton(elements.stopService, 'stop_user_service', serviceId, 'Stop', isConnected);
+  setProcessButton(elements.restartService, 'restart_user_service', serviceId, 'Restart', isConnected);
+}
+
+function setProcessButton(button, actionId, serviceId, label, isConnected) {
+  const key = getCommandKey('process', actionId, serviceId);
+  const isRunning = state.runningActions.has(key);
+  button.disabled = !isConnected || !serviceId || isRunning;
+  button.textContent = isRunning ? 'Running' : label;
+}
+
+async function runProcessAction(actionId) {
+  const serviceId = elements.serviceSelect.value;
+  const key = getCommandKey('process', actionId, serviceId);
+  if (!serviceId || state.runningActions.has(key)) return;
+
+  const requestId = createRequestId(actionId);
+  const service = state.allowedServices.find((item) => item.id === serviceId);
+  const actionLabel = getProcessActionLabel(actionId);
+  const label = `${actionLabel}: ${service?.label || serviceId}`;
+
+  upsertCommandRun({
+    type: 'process',
+    requestId,
+    actionId,
+    label,
+    serviceId,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    endedAt: '',
+    code: null,
+    error: ''
+  });
+  state.runningActions.add(key);
+  renderProcessActions();
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: {
+      cmd: 'run_process_action',
+      actionId,
+      requestId,
+      serviceId
+    }
+  });
+
+  if (!result?.ok) {
+    state.runningActions.delete(key);
+    upsertCommandRun({
+      type: 'process',
+      requestId,
+      actionId,
+      label,
+      serviceId,
+      status: 'failed',
+      endedAt: new Date().toISOString(),
+      error: result?.error || 'Daemon socket is not connected'
+    });
+    renderProcessActions();
+  }
+}
+
 function upsertCommandRun(nextRun) {
   const existing = state.commandHistory.find((run) => run.requestId === nextRun.requestId);
 
@@ -857,8 +1036,9 @@ function formatCommandMeta(run) {
   const error = run.error ? ` ${run.error}` : '';
   const request = run.requestId ? ` ${run.requestId}` : '';
   const target = run.targetPath ? ` ${run.targetPath}` : '';
+  const service = run.serviceId ? ` ${run.serviceId}` : '';
   const type = run.type ? `${run.type} ` : '';
-  return ended ? `${type}${started} -> ${ended}${code}${error}${request}${target}` : `${type}${started}${request}${target}`;
+  return ended ? `${type}${started} -> ${ended}${code}${error}${request}${target}${service}` : `${type}${started}${request}${target}${service}`;
 }
 
 function createRequestId(actionId) {
@@ -872,6 +1052,10 @@ function getActionLabel(actionId) {
 
 function getPermissionActionLabel(actionId) {
   return state.permissionActions.find((action) => action.id === actionId)?.label || actionId || 'Permission action';
+}
+
+function getProcessActionLabel(actionId) {
+  return state.processActions.find((action) => action.id === actionId)?.label || actionId || 'Service action';
 }
 
 function getCommandKey(type, actionId, targetPath = '') {
