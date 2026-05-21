@@ -35,6 +35,7 @@ server.on('connection', (ws) => {
 
   ws.on('close', () => {
     route(ws, { cmd: 'stop_log', token });
+    route(ws, { cmd: 'stop_actions', token });
   });
 
   send(ws, { type: 'hello', protocol: 'lecc.v1' });

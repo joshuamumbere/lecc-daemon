@@ -131,7 +131,8 @@ p {
 }
 
 .context,
-.control-row {
+.control-row,
+.control-group {
   border: 1px solid var(--line);
   background: var(--panel);
   padding: 12px;
@@ -192,6 +193,43 @@ input:focus {
   align-items: center;
 }
 
+.control-group {
+  display: grid;
+  gap: 10px;
+}
+
+.group-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.action-list {
+  display: grid;
+  gap: 8px;
+}
+
+.action-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  background: #121515;
+}
+
+.action-item strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.empty {
+  padding: 10px;
+  border: 1px dashed var(--line);
+}
+
 .button {
   min-width: 104px;
   height: 38px;
@@ -212,4 +250,8 @@ input:focus {
   background: var(--panel-strong);
   color: var(--muted);
   cursor: not-allowed;
+}
+
+.command-terminal {
+  height: 112px;
 }

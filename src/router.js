@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { listCacheActions, runCacheAction } from './handlers/cache.js';
 import { tailLog } from './handlers/logs.js';
 
 const activeTails = new WeakMap();
+const activeCacheActions = new WeakMap();
 
 export function createRouter(config) {
   const portMap = loadPortMap(config.portMapPath);
@@ -24,6 +26,19 @@ export function createRouter(config) {
       case 'stop_log':
         stopTail(ws);
         send(ws, { type: 'log_stopped' });
+        break;
+
+      case 'stop_actions':
+        stopCacheActions(ws);
+        send(ws, { type: 'actions_stopped' });
+        break;
+
+      case 'list_cache_actions':
+        send(ws, { type: 'cache_actions', actions: listCacheActions() });
+        break;
+
+      case 'run_cache_action':
+        runAllowedCacheAction(ws, message);
         break;
 
       case 'echo':
@@ -72,6 +87,34 @@ function stopTail(ws) {
     tail.kill();
     activeTails.delete(ws);
   }
+}
+
+function runAllowedCacheAction(ws, message) {
+  const child = runCacheAction(String(message.actionId || ''), (payload) => send(ws, payload));
+  if (!child) return;
+
+  const actions = activeCacheActions.get(ws) || new Set();
+  actions.add(child);
+  activeCacheActions.set(ws, actions);
+
+  child.on('close', () => {
+    actions.delete(child);
+    if (actions.size === 0) {
+      activeCacheActions.delete(ws);
+    }
+  });
+}
+
+function stopCacheActions(ws) {
+  const actions = activeCacheActions.get(ws);
+  if (!actions) return;
+
+  actions.forEach((child) => {
+    if (!child.killed) {
+      child.kill();
+    }
+  });
+  activeCacheActions.delete(ws);
 }
 
 function loadPortMap(portMapPath) {

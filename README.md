@@ -5,7 +5,7 @@ LECC is a local-only developer control surface made of two pieces:
 - A Node.js daemon bound to `127.0.0.1` that owns all host access.
 - A Manifest V3 browser extension that connects to the daemon over WebSocket.
 
-This repository currently contains the first implementation slice: authenticated daemon messaging, port-based project context, safe log tailing, and a loadable extension popup.
+This repository currently contains the first implementation slices: authenticated daemon messaging, port-based project context, safe log tailing, allow-listed cache actions, and a loadable extension popup.
 
 ## Project Layout
 
@@ -15,7 +15,9 @@ This repository currently contains the first implementation slice: authenticated
 │   ├── index.js              # WebSocket daemon entrypoint
 │   ├── config.js             # token/config helpers
 │   ├── router.js             # allow-listed daemon commands
-│   └── handlers/logs.js      # validated tail -f log streaming
+│   └── handlers/
+│       ├── cache.js          # allow-listed cache command execution
+│       └── logs.js           # validated tail -f log streaming
 ├── extension/
 │   ├── manifest.json
 │   ├── background/service-worker.js
@@ -62,6 +64,8 @@ LECC_ALLOWED_ORIGINS=chrome-extension://<extension-id>
 
 Open a localhost tab such as `http://localhost:3000`. If the port exists in `port-map.json`, the extension sends that context to the daemon and streams the mapped log file.
 
+The Controls tab also lists cache actions reported by the daemon. Each action maps to a fixed command and argument list in `src/handlers/cache.js`; the extension only sends an action ID.
+
 ## Demo Log
 
 The default `port-map.json` points to `/tmp/lecc-demo.log`. Create it before testing log streaming:
@@ -77,7 +81,7 @@ printf 'INFO demo log ready\n' >> /tmp/lecc-demo.log
 - Every command must include the daemon token.
 - Commands are routed through a fixed allow-list in `src/router.js`.
 - Log paths are resolved and checked against allowed directories before `tail` is started.
-- The current extension command surface is intentionally minimal: connect, disconnect, context detection, log streaming, and echo.
+- The current extension command surface is intentionally small: connect, disconnect, context detection, log streaming, echo, cache action listing, and cache action execution.
 
 ## Checks
 

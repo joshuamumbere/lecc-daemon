@@ -6,6 +6,9 @@ const DEFAULT_SETTINGS = {
 const state = {
   daemonState: 'disconnected',
   logLines: [],
+  commandLines: [],
+  cacheActions: [],
+  runningActions: new Set(),
   context: null
 };
 
@@ -19,6 +22,8 @@ const elements = {
   token: document.querySelector('#token'),
   connectButton: document.querySelector('#connectButton'),
   echoButton: document.querySelector('#echoButton'),
+  cacheActions: document.querySelector('#cacheActions'),
+  commandOutput: document.querySelector('#commandOutput'),
   saveSettings: document.querySelector('#saveSettings')
 };
 
@@ -107,6 +112,29 @@ function handleDaemonMessage(payload) {
     state.logLines.push(`[ECHO] ${payload.data}`);
     renderLogs();
   }
+
+  if (payload.type === 'cache_actions') {
+    state.cacheActions = payload.actions || [];
+    renderCacheActions();
+  }
+
+  if (payload.type === 'cache_action_started') {
+    state.runningActions.add(payload.actionId);
+    appendCommandLine(`[START] ${payload.label}`);
+    renderCacheActions();
+  }
+
+  if (payload.type === 'cache_action_output') {
+    payload.data.split(/\r?\n/).filter(Boolean).forEach((line) => {
+      appendCommandLine(`[${payload.stream}] ${line}`);
+    });
+  }
+
+  if (payload.type === 'cache_action_finished') {
+    state.runningActions.delete(payload.actionId);
+    appendCommandLine(payload.ok ? `[DONE] ${payload.actionId}` : `[FAILED] ${payload.actionId} (${payload.code ?? payload.error})`);
+    renderCacheActions();
+  }
 }
 
 function updateStatus(nextState) {
@@ -115,6 +143,11 @@ function updateStatus(nextState) {
   elements.status.textContent = humanizeState(nextState);
   elements.connectButton.textContent = nextState === 'connected' ? 'Disconnect' : 'Connect';
   elements.echoButton.disabled = nextState !== 'connected';
+  renderCacheActions();
+
+  if (nextState === 'connected') {
+    requestCacheActions();
+  }
 }
 
 function renderContext() {
@@ -131,6 +164,61 @@ function renderLogs() {
 
   elements.logOutput.textContent = lines.join('\n');
   elements.logOutput.scrollTop = elements.logOutput.scrollHeight;
+}
+
+function renderCacheActions() {
+  if (state.daemonState !== 'connected') {
+    elements.cacheActions.innerHTML = '<p class="empty">Connect to load actions.</p>';
+    return;
+  }
+
+  if (state.cacheActions.length === 0) {
+    elements.cacheActions.innerHTML = '<p class="empty">No cache actions reported by daemon.</p>';
+    return;
+  }
+
+  elements.cacheActions.replaceChildren(...state.cacheActions.map((action) => {
+    const item = document.createElement('div');
+    item.className = 'action-item';
+
+    const copy = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = action.label;
+    const description = document.createElement('p');
+    description.textContent = action.description;
+    copy.append(title, description);
+
+    const button = document.createElement('button');
+    button.className = 'button secondary';
+    button.type = 'button';
+    button.textContent = state.runningActions.has(action.id) ? 'Running' : 'Run';
+    button.disabled = state.runningActions.has(action.id);
+    button.addEventListener('click', () => runCacheAction(action.id));
+
+    item.append(copy, button);
+    return item;
+  }));
+}
+
+async function requestCacheActions() {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'list_cache_actions' }
+  });
+}
+
+async function runCacheAction(actionId) {
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'run_cache_action', actionId }
+  });
+}
+
+function appendCommandLine(line) {
+  state.commandLines.push(line);
+  state.commandLines = state.commandLines.slice(-120);
+  elements.commandOutput.textContent = state.commandLines.join('\n');
+  elements.commandOutput.scrollTop = elements.commandOutput.scrollHeight;
 }
 
 function humanizeState(value) {
