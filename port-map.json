@@ -1,0 +1,10 @@
+{
+  "3000": {
+    "name": "Frontend",
+    "logPath": "/tmp/lecc-demo.log"
+  },
+  "8080": {
+    "name": "API",
+    "logPath": "/tmp/lecc-demo.log"
+  }
+}
