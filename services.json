@@ -1,0 +1,5 @@
+{
+  "lecc-daemon.service": {
+    "label": "LECC Daemon"
+  }
+}

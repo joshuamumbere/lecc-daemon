@@ -1,0 +1,166 @@
+import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const PROCESS_ACTIONS = {
+  start_user_service: {
+    label: 'Start Service',
+    description: 'Starts an allow-listed systemd user service.',
+    systemctlVerb: 'start'
+  },
+  stop_user_service: {
+    label: 'Stop Service',
+    description: 'Stops an allow-listed systemd user service.',
+    systemctlVerb: 'stop'
+  },
+  restart_user_service: {
+    label: 'Restart Service',
+    description: 'Restarts an allow-listed systemd user service.',
+    systemctlVerb: 'restart'
+  }
+};
+
+const SERVICE_PATTERN = /^[a-zA-Z0-9_.@-]+\.service$/;
+
+export function listProcessActions() {
+  return Object.entries(PROCESS_ACTIONS).map(([id, action]) => ({
+    id,
+    label: action.label,
+    description: action.description
+  }));
+}
+
+export function loadAllowedServices(servicesPath) {
+  try {
+    const services = JSON.parse(readFileSync(resolve(servicesPath), 'utf8'));
+    return normalizeServices(services);
+  } catch {
+    return {};
+  }
+}
+
+export function listAllowedServices(services) {
+  return Object.entries(services).map(([id, service]) => ({
+    id,
+    label: service.label
+  }));
+}
+
+export function runProcessAction(actionId, requestId, serviceId, services, sendUpdate) {
+  const action = PROCESS_ACTIONS[actionId];
+  const service = validateService(serviceId, services);
+
+  if (!action) {
+    sendFailure(sendUpdate, requestId, actionId, serviceId, 'Process action is not allow-listed');
+    return null;
+  }
+
+  if (!service.ok) {
+    sendFailure(sendUpdate, requestId, actionId, serviceId, service.error);
+    return null;
+  }
+
+  const args = ['--user', action.systemctlVerb, service.serviceId];
+
+  sendUpdate({
+    type: 'process_action_started',
+    requestId,
+    actionId,
+    serviceId: service.serviceId,
+    label: `${action.label}: ${service.label}`,
+    command: 'systemctl',
+    args
+  });
+
+  const child = spawn('systemctl', args, {
+    shell: false,
+    stdio: ['ignore', 'pipe', 'pipe']
+  });
+
+  child.stdout.on('data', (chunk) => {
+    sendUpdate({
+      type: 'process_action_output',
+      requestId,
+      actionId,
+      serviceId: service.serviceId,
+      stream: 'stdout',
+      data: chunk.toString()
+    });
+  });
+
+  child.stderr.on('data', (chunk) => {
+    sendUpdate({
+      type: 'process_action_output',
+      requestId,
+      actionId,
+      serviceId: service.serviceId,
+      stream: 'stderr',
+      data: chunk.toString()
+    });
+  });
+
+  child.on('error', (error) => {
+    sendFailure(sendUpdate, requestId, actionId, service.serviceId, error.message, `${action.label}: ${service.label}`);
+  });
+
+  child.on('close', (code) => {
+    sendUpdate({
+      type: 'process_action_finished',
+      requestId,
+      actionId,
+      serviceId: service.serviceId,
+      label: `${action.label}: ${service.label}`,
+      ok: code === 0,
+      code
+    });
+  });
+
+  return child;
+}
+
+function normalizeServices(services) {
+  if (!services || typeof services !== 'object' || Array.isArray(services)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(services)
+      .filter(([serviceId]) => SERVICE_PATTERN.test(serviceId))
+      .map(([serviceId, service]) => [
+        serviceId,
+        {
+          label: String(service?.label || serviceId).trim() || serviceId
+        }
+      ])
+  );
+}
+
+function validateService(rawServiceId, services) {
+  const serviceId = String(rawServiceId || '').trim();
+
+  if (!SERVICE_PATTERN.test(serviceId)) {
+    return { ok: false, error: 'Service must be a valid .service unit name', serviceId };
+  }
+
+  if (!services[serviceId]) {
+    return { ok: false, error: 'Service is not allow-listed', serviceId };
+  }
+
+  return {
+    ok: true,
+    serviceId,
+    label: services[serviceId].label
+  };
+}
+
+function sendFailure(sendUpdate, requestId, actionId, serviceId, error, label = '') {
+  sendUpdate({
+    type: 'process_action_failed',
+    requestId,
+    actionId,
+    serviceId,
+    label: label || actionId,
+    ok: false,
+    error
+  });
+}
