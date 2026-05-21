@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 const PROCESS_ACTIONS = {
   start_user_service: {
@@ -44,6 +44,51 @@ export function listAllowedServices(services) {
     id,
     label: service.label
   }));
+}
+
+export function saveAllowedServices(servicesPath, services) {
+  const validation = validateServices(services);
+  if (!validation.ok) {
+    return validation;
+  }
+
+  const resolvedPath = resolve(servicesPath);
+  mkdirSync(dirname(resolvedPath), { recursive: true });
+  writeFileSync(resolvedPath, `${JSON.stringify(validation.services, null, 2)}\n`, { mode: 0o600 });
+
+  return validation;
+}
+
+export function validateServices(services) {
+  const errors = [];
+  const normalized = {};
+
+  if (!services || typeof services !== 'object' || Array.isArray(services)) {
+    return { ok: false, errors: ['Services must be an object'] };
+  }
+
+  Object.entries(services).forEach(([rawServiceId, rawService]) => {
+    const serviceId = String(rawServiceId || '').trim();
+    const label = String(rawService?.label || '').trim();
+
+    if (!SERVICE_PATTERN.test(serviceId)) {
+      errors.push(`${serviceId || '(blank)'}: service must be a valid .service unit name`);
+      return;
+    }
+
+    if (!label) {
+      errors.push(`${serviceId}: label is required`);
+      return;
+    }
+
+    normalized[serviceId] = { label };
+  });
+
+  if (errors.length > 0) {
+    return { ok: false, errors };
+  }
+
+  return { ok: true, services: normalized };
 }
 
 export function runProcessAction(actionId, requestId, serviceId, services, sendUpdate) {

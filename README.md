@@ -126,6 +126,8 @@ Permission presets are daemon-owned allow-list entries. The extension sends a pr
 
 Service controls use `systemctl --user` and only operate on services listed in `services.json`. Service names must be valid `.service` unit names and are never executed through a shell.
 
+Use the Settings tab to edit the service allow-list without restarting the daemon. Saved services immediately refresh the Controls service dropdown.
+
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.
 
 ## Demo Log

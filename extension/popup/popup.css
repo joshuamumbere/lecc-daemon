@@ -449,14 +449,16 @@ input:focus {
   color: var(--danger);
 }
 
-.project-list {
+.project-list,
+.service-list {
   display: grid;
   gap: 8px;
   max-height: 230px;
   overflow: auto;
 }
 
-.project-row {
+.project-row,
+.service-row {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1.4fr) 34px;
   gap: 6px;
@@ -466,7 +468,12 @@ input:focus {
   background: #121515;
 }
 
-.project-row .field {
+.service-row {
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 34px;
+}
+
+.project-row .field,
+.service-row .field {
   gap: 4px;
 }
 

@@ -71,6 +71,11 @@ const elements = {
   savePortMap: document.querySelector('#savePortMap'),
   reloadPortMap: document.querySelector('#reloadPortMap'),
   portMapStatus: document.querySelector('#portMapStatus'),
+  serviceRows: document.querySelector('#serviceRows'),
+  addService: document.querySelector('#addService'),
+  saveServices: document.querySelector('#saveServices'),
+  reloadServices: document.querySelector('#reloadServices'),
+  servicesStatus: document.querySelector('#servicesStatus'),
   saveSettings: document.querySelector('#saveSettings')
 };
 
@@ -141,6 +146,14 @@ function bindActions() {
 
   elements.reloadPortMap.addEventListener('click', requestPortMap);
   elements.savePortMap.addEventListener('click', savePortMap);
+  elements.addService.addEventListener('click', () => {
+    const rows = readServiceRows();
+    rows.push({ serviceId: '', label: '' });
+    renderServiceRows(rows);
+    setServicesStatus('');
+  });
+  elements.reloadServices.addEventListener('click', requestServicesConfig);
+  elements.saveServices.addEventListener('click', saveServices);
   elements.applyMode.addEventListener('click', () => runPermissionAction('chmod_project_path'));
   elements.applyOwner.addEventListener('click', () => runPermissionAction('chown_project_path'));
   elements.applyPreset.addEventListener('click', runPermissionPreset);
@@ -376,9 +389,30 @@ function handleDaemonMessage(payload) {
   }
 
   if (payload.type === 'allowed_services') {
+    const previousService = elements.serviceSelect.value;
     state.allowedServices = payload.services || [];
-    renderAllowedServices();
+    renderAllowedServices(previousService);
     renderProcessActions();
+  }
+
+  if (payload.type === 'services_config') {
+    state.allowedServices = listServicesFromConfig(payload.services || {});
+    renderServiceConfig(payload.services || {});
+    renderAllowedServices(elements.serviceSelect.value);
+    renderProcessActions();
+    setServicesStatus('Services loaded.', 'success');
+  }
+
+  if (payload.type === 'services_saved') {
+    state.allowedServices = listServicesFromConfig(payload.services || {});
+    renderServiceConfig(payload.services || {});
+    renderAllowedServices(elements.serviceSelect.value);
+    renderProcessActions();
+    setServicesStatus('Services saved.', 'success');
+  }
+
+  if (payload.type === 'services_error') {
+    setServicesStatus((payload.errors || ['Services config is invalid.']).join(' '), 'error');
   }
 
   if (payload.type === 'process_action_started') {
@@ -477,6 +511,7 @@ function updateStatus(nextState) {
   renderPermissionActions();
   renderProcessActions();
   renderPortMap();
+  renderServicesSettings();
   renderLogStatus();
 
   if (nextStatus.state === 'connected') {
@@ -486,6 +521,7 @@ function updateStatus(nextState) {
     requestProcessActions();
     requestAllowedServices();
     requestPortMap();
+    requestServicesConfig();
   }
 }
 
@@ -904,7 +940,7 @@ async function requestAllowedServices() {
   });
 }
 
-function renderAllowedServices() {
+function renderAllowedServices(preferredService = '') {
   if (state.allowedServices.length === 0) {
     elements.serviceSelect.replaceChildren(new Option('No services allow-listed', ''));
     return;
@@ -913,6 +949,10 @@ function renderAllowedServices() {
   elements.serviceSelect.replaceChildren(...state.allowedServices.map((service) => (
     new Option(`${service.label} (${service.id})`, service.id)
   )));
+
+  if (preferredService && state.allowedServices.some((service) => service.id === preferredService)) {
+    elements.serviceSelect.value = preferredService;
+  }
 }
 
 function renderProcessActions() {
@@ -978,6 +1018,107 @@ async function runProcessAction(actionId) {
       error: result?.error || 'Daemon socket is not connected'
     });
     renderProcessActions();
+  }
+}
+
+async function requestServicesConfig() {
+  if (state.daemonState !== 'connected') return;
+  setServicesStatus('Loading services.');
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'get_services' }
+  });
+}
+
+function renderServicesSettings() {
+  if (state.daemonState !== 'connected') {
+    elements.serviceRows.innerHTML = '<p class="empty">Connect to load services.</p>';
+    elements.addService.disabled = true;
+    elements.saveServices.disabled = true;
+    elements.reloadServices.disabled = true;
+    return;
+  }
+
+  elements.addService.disabled = false;
+  elements.saveServices.disabled = false;
+  elements.reloadServices.disabled = false;
+}
+
+function renderServiceConfig(services) {
+  const rows = Object.entries(services).map(([serviceId, service]) => ({
+    serviceId,
+    label: service.label || ''
+  }));
+  renderServiceRows(rows);
+}
+
+function renderServiceRows(rows) {
+  if (rows.length === 0) {
+    elements.serviceRows.innerHTML = '<p class="empty">No services allow-listed yet.</p>';
+    return;
+  }
+
+  elements.serviceRows.replaceChildren(...rows.map((row) => createServiceRow(row)));
+}
+
+function createServiceRow(row) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'service-row';
+
+  const serviceId = createInputField('Service', 'serviceId', row.serviceId, 'my-app.service');
+  const label = createInputField('Label', 'label', row.label, 'My App');
+  const remove = document.createElement('button');
+  remove.className = 'icon-button';
+  remove.type = 'button';
+  remove.title = 'Remove service';
+  remove.textContent = 'X';
+  remove.addEventListener('click', () => {
+    wrapper.remove();
+    if (elements.serviceRows.children.length === 0) {
+      renderServiceRows([]);
+    }
+  });
+
+  wrapper.append(serviceId, label, remove);
+  return wrapper;
+}
+
+function readServiceRows() {
+  return [...elements.serviceRows.querySelectorAll('.service-row')].map((row) => ({
+    serviceId: row.querySelector('[data-key="serviceId"]').value.trim(),
+    label: row.querySelector('[data-key="label"]').value.trim()
+  }));
+}
+
+async function saveServices() {
+  const rows = readServiceRows();
+  const services = {};
+
+  rows.forEach((row) => {
+    if (!row.serviceId && !row.label) return;
+    services[row.serviceId] = { label: row.label };
+  });
+
+  setServicesStatus('Saving services.');
+  await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'save_services', services }
+  });
+}
+
+function listServicesFromConfig(services) {
+  return Object.entries(services).map(([id, service]) => ({
+    id,
+    label: service.label || id
+  }));
+}
+
+function setServicesStatus(message, tone = '') {
+  elements.servicesStatus.textContent = message;
+  if (tone) {
+    elements.servicesStatus.dataset.tone = tone;
+  } else {
+    delete elements.servicesStatus.dataset.tone;
   }
 }
 

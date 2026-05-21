@@ -1,6 +1,6 @@
 import { listCacheActions, runCacheAction } from './handlers/cache.js';
 import { listPermissionActions, listPermissionPresets, runPermissionAction, runPermissionPreset } from './handlers/permissions.js';
-import { listAllowedServices, listProcessActions, loadAllowedServices, runProcessAction } from './handlers/processes.js';
+import { listAllowedServices, listProcessActions, loadAllowedServices, runProcessAction, saveAllowedServices } from './handlers/processes.js';
 import { tailLog } from './handlers/logs.js';
 import { loadPortMap, savePortMap } from './handlers/port-map.js';
 
@@ -85,6 +85,20 @@ export function createRouter(config) {
       case 'list_allowed_services':
         state.services = loadAllowedServices(config.servicesPath);
         send(ws, { type: 'allowed_services', services: listAllowedServices(state.services) });
+        break;
+
+      case 'get_services':
+        send(ws, { type: 'services_config', services: state.services });
+        break;
+
+      case 'reload_services':
+        state.services = loadAllowedServices(config.servicesPath);
+        send(ws, { type: 'services_config', services: state.services });
+        send(ws, { type: 'allowed_services', services: listAllowedServices(state.services) });
+        break;
+
+      case 'save_services':
+        saveNextServices(ws, config, state, message);
         break;
 
       case 'run_process_action':
@@ -279,4 +293,17 @@ function saveNextPortMap(ws, config, state, message) {
   if (ws.leccContext?.port) {
     setContext(ws, config, state.portMap, { port: ws.leccContext.port });
   }
+}
+
+function saveNextServices(ws, config, state, message) {
+  const result = saveAllowedServices(config.servicesPath, message.services);
+
+  if (!result.ok) {
+    send(ws, { type: 'services_error', errors: result.errors });
+    return;
+  }
+
+  state.services = result.services;
+  send(ws, { type: 'services_saved', services: state.services });
+  send(ws, { type: 'allowed_services', services: listAllowedServices(state.services) });
 }

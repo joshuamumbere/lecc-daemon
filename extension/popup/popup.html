@@ -182,6 +182,23 @@
           </div>
           <p id="portMapStatus" class="message" role="status"></p>
         </div>
+        <div class="settings-group">
+          <div class="group-heading">
+            <div>
+              <h2>Services</h2>
+              <p>Allow-listed systemd user services.</p>
+            </div>
+            <button id="reloadServices" class="button secondary compact" type="button">Reload</button>
+          </div>
+          <div id="serviceRows" class="service-list">
+            <p class="empty">Connect to load services.</p>
+          </div>
+          <div class="settings-actions">
+            <button id="addService" class="button secondary" type="button">Add Service</button>
+            <button id="saveServices" class="button" type="button">Save Services</button>
+          </div>
+          <p id="servicesStatus" class="message" role="status"></p>
+        </div>
       </section>
     </main>
     <script src="popup.js"></script>
