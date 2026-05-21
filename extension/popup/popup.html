@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LECC</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local Environment</p>
+          <h1>Command Center</h1>
+        </div>
+        <span id="status" class="status" data-state="disconnected">Disconnected</span>
+      </header>
+
+      <nav class="tabs" aria-label="Panel sections">
+        <button class="tab is-active" data-tab="logs" type="button">Logs</button>
+        <button class="tab" data-tab="controls" type="button">Controls</button>
+        <button class="tab" data-tab="settings" type="button">Settings</button>
+      </nav>
+
+      <section id="logs" class="panel is-active">
+        <div class="context">
+          <span id="contextName">No project context</span>
+          <small id="contextPath">Open a localhost tab with a mapped port.</small>
+        </div>
+        <label class="field">
+          <span>Filter</span>
+          <input id="logFilter" type="search" placeholder="error, warn, request id">
+        </label>
+        <pre id="logOutput" class="terminal" aria-live="polite"></pre>
+      </section>
+
+      <section id="controls" class="panel">
+        <div class="control-row">
+          <div>
+            <h2>Connection</h2>
+            <p>Open or close the authenticated daemon socket.</p>
+          </div>
+          <button id="connectButton" class="button" type="button">Connect</button>
+        </div>
+        <div class="control-row">
+          <div>
+            <h2>Test Command</h2>
+            <p>Sends an allow-listed echo command through the daemon.</p>
+          </div>
+          <button id="echoButton" class="button secondary" type="button">Send Echo</button>
+        </div>
+      </section>
+
+      <section id="settings" class="panel">
+        <label class="field">
+          <span>Daemon URL</span>
+          <input id="daemonUrl" type="url" placeholder="ws://127.0.0.1:17324">
+        </label>
+        <label class="field">
+          <span>Auth Token</span>
+          <input id="token" type="password" autocomplete="off" placeholder="Paste daemon token">
+        </label>
+        <button id="saveSettings" class="button" type="button">Save Settings</button>
+      </section>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
