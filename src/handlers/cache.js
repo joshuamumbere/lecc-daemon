@@ -29,17 +29,26 @@ export function listCacheActions() {
   }));
 }
 
-export function runCacheAction(actionId, sendUpdate) {
+export function runCacheAction(actionId, requestId, sendUpdate) {
   const action = CACHE_ACTIONS[actionId];
   if (!action) {
-    sendUpdate({ type: 'error', error: 'Cache action is not allow-listed' });
+    sendUpdate({
+      type: 'cache_action_failed',
+      requestId,
+      actionId,
+      ok: false,
+      error: 'Cache action is not allow-listed'
+    });
     return null;
   }
 
   sendUpdate({
     type: 'cache_action_started',
+    requestId,
     actionId,
-    label: action.label
+    label: action.label,
+    command: action.command,
+    args: action.args
   });
 
   const child = spawn(action.command, action.args, {
@@ -50,6 +59,7 @@ export function runCacheAction(actionId, sendUpdate) {
   child.stdout.on('data', (chunk) => {
     sendUpdate({
       type: 'cache_action_output',
+      requestId,
       actionId,
       stream: 'stdout',
       data: chunk.toString()
@@ -59,6 +69,7 @@ export function runCacheAction(actionId, sendUpdate) {
   child.stderr.on('data', (chunk) => {
     sendUpdate({
       type: 'cache_action_output',
+      requestId,
       actionId,
       stream: 'stderr',
       data: chunk.toString()
@@ -67,8 +78,10 @@ export function runCacheAction(actionId, sendUpdate) {
 
   child.on('error', (error) => {
     sendUpdate({
-      type: 'cache_action_finished',
+      type: 'cache_action_failed',
+      requestId,
       actionId,
+      label: action.label,
       ok: false,
       error: error.message
     });
@@ -77,7 +90,9 @@ export function runCacheAction(actionId, sendUpdate) {
   child.on('close', (code) => {
     sendUpdate({
       type: 'cache_action_finished',
+      requestId,
       actionId,
+      label: action.label,
       ok: code === 0,
       code
     });

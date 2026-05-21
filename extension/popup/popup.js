@@ -2,6 +2,8 @@ const DEFAULT_SETTINGS = {
   daemonUrl: 'ws://127.0.0.1:17324',
   token: ''
 };
+const COMMAND_HISTORY_KEY = 'commandHistory';
+const COMMAND_HISTORY_LIMIT = 20;
 
 const state = {
   daemonState: 'disconnected',
@@ -17,6 +19,7 @@ const state = {
   isLogPaused: false,
   isLogStreaming: false,
   commandLines: [],
+  commandHistory: [],
   cacheActions: [],
   portMap: {},
   runningActions: new Set(),
@@ -45,6 +48,7 @@ const elements = {
   diagnosticUrl: document.querySelector('#diagnosticUrl'),
   diagnosticClose: document.querySelector('#diagnosticClose'),
   cacheActions: document.querySelector('#cacheActions'),
+  commandHistory: document.querySelector('#commandHistory'),
   commandOutput: document.querySelector('#commandOutput'),
   portMapRows: document.querySelector('#portMapRows'),
   addProject: document.querySelector('#addProject'),
@@ -60,6 +64,7 @@ async function init() {
   bindTabs();
   bindActions();
   await loadSettings();
+  await loadCommandHistory();
   const status = await chrome.runtime.sendMessage({ type: 'status' });
   updateStatus(status.status || status.state || 'disconnected');
 }
@@ -134,6 +139,23 @@ async function loadSettings() {
   renderDiagnostics();
 }
 
+async function loadCommandHistory() {
+  const result = await chrome.storage.local.get({ [COMMAND_HISTORY_KEY]: [] });
+  const storedHistory = Array.isArray(result[COMMAND_HISTORY_KEY]) ? result[COMMAND_HISTORY_KEY] : [];
+  state.commandHistory = storedHistory.map((run) => {
+    if (run.status !== 'running') return run;
+    return {
+      ...run,
+      status: 'failed',
+      endedAt: new Date().toISOString(),
+      error: 'Popup closed before completion'
+    };
+  });
+  state.runningActions = new Set();
+  persistCommandHistory();
+  renderCommandHistory();
+}
+
 async function saveConnectionSettings() {
   const settings = {
     daemonUrl: elements.daemonUrl.value.trim() || DEFAULT_SETTINGS.daemonUrl,
@@ -189,19 +211,56 @@ function handleDaemonMessage(payload) {
 
   if (payload.type === 'cache_action_started') {
     state.runningActions.add(payload.actionId);
-    appendCommandLine(`[START] ${payload.label}`);
+    upsertCommandRun({
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      endedAt: '',
+      code: null,
+      error: '',
+      command: payload.command,
+      args: payload.args || []
+    });
+    appendCommandLine(`[${payload.requestId}] [START] ${payload.label}`);
     renderCacheActions();
   }
 
   if (payload.type === 'cache_action_output') {
     payload.data.split(/\r?\n/).filter(Boolean).forEach((line) => {
-      appendCommandLine(`[${payload.stream}] ${line}`);
+      appendCommandLine(`[${payload.requestId}] [${payload.stream}] ${line}`);
     });
   }
 
   if (payload.type === 'cache_action_finished') {
     state.runningActions.delete(payload.actionId);
-    appendCommandLine(payload.ok ? `[DONE] ${payload.actionId}` : `[FAILED] ${payload.actionId} (${payload.code ?? payload.error})`);
+    upsertCommandRun({
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getActionLabel(payload.actionId),
+      status: payload.ok ? 'succeeded' : 'failed',
+      endedAt: new Date().toISOString(),
+      code: payload.code ?? null,
+      error: payload.error || ''
+    });
+    appendCommandLine(payload.ok ? `[${payload.requestId}] [DONE] ${payload.actionId}` : `[${payload.requestId}] [FAILED] ${payload.actionId} (${payload.code ?? payload.error})`);
+    renderCacheActions();
+  }
+
+  if (payload.type === 'cache_action_failed') {
+    state.runningActions.delete(payload.actionId);
+    upsertCommandRun({
+      requestId: payload.requestId,
+      actionId: payload.actionId,
+      label: payload.label || getActionLabel(payload.actionId),
+      status: 'failed',
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      code: null,
+      error: payload.error || 'Command failed'
+    });
+    appendCommandLine(`[${payload.requestId}] [FAILED] ${payload.actionId}: ${payload.error}`);
     renderCacheActions();
   }
 
@@ -436,7 +495,7 @@ function renderCacheActions() {
     button.className = 'button secondary';
     button.type = 'button';
     button.textContent = state.runningActions.has(action.id) ? 'Running' : 'Run';
-    button.disabled = state.runningActions.has(action.id);
+    button.disabled = state.daemonState !== 'connected' || state.runningActions.has(action.id);
     button.addEventListener('click', () => runCacheAction(action.id));
 
     item.append(copy, button);
@@ -452,10 +511,106 @@ async function requestCacheActions() {
 }
 
 async function runCacheAction(actionId) {
-  await chrome.runtime.sendMessage({
-    type: 'send',
-    payload: { cmd: 'run_cache_action', actionId }
+  if (state.runningActions.has(actionId)) return;
+
+  const requestId = createRequestId(actionId);
+  const action = state.cacheActions.find((item) => item.id === actionId);
+  upsertCommandRun({
+    requestId,
+    actionId,
+    label: action?.label || actionId,
+    status: 'running',
+    startedAt: new Date().toISOString(),
+    endedAt: '',
+    code: null,
+    error: ''
   });
+  state.runningActions.add(actionId);
+  renderCacheActions();
+
+  const result = await chrome.runtime.sendMessage({
+    type: 'send',
+    payload: { cmd: 'run_cache_action', actionId, requestId }
+  });
+
+  if (!result?.ok) {
+    state.runningActions.delete(actionId);
+    upsertCommandRun({
+      requestId,
+      actionId,
+      label: action?.label || actionId,
+      status: 'failed',
+      endedAt: new Date().toISOString(),
+      error: result?.error || 'Daemon socket is not connected'
+    });
+    renderCacheActions();
+  }
+}
+
+function upsertCommandRun(nextRun) {
+  const existing = state.commandHistory.find((run) => run.requestId === nextRun.requestId);
+
+  if (existing) {
+    Object.assign(existing, nextRun);
+  } else {
+    state.commandHistory.unshift(nextRun);
+  }
+
+  state.commandHistory = state.commandHistory.slice(0, COMMAND_HISTORY_LIMIT);
+  persistCommandHistory();
+  renderCommandHistory();
+}
+
+function renderCommandHistory() {
+  if (state.commandHistory.length === 0) {
+    elements.commandHistory.innerHTML = '<p class="empty">No command runs yet.</p>';
+    return;
+  }
+
+  elements.commandHistory.replaceChildren(...state.commandHistory.map((run) => {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+
+    const copy = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = run.label || run.actionId;
+    const meta = document.createElement('div');
+    meta.className = 'history-meta';
+    meta.textContent = formatCommandMeta(run);
+    copy.append(title, meta);
+
+    const status = document.createElement('span');
+    status.className = 'history-status';
+    status.dataset.status = run.status;
+    status.textContent = run.status;
+
+    item.append(copy, status);
+    return item;
+  }));
+}
+
+function persistCommandHistory() {
+  chrome.storage.local.set({
+    [COMMAND_HISTORY_KEY]: state.commandHistory.slice(0, COMMAND_HISTORY_LIMIT)
+  }).catch(() => {});
+}
+
+function formatCommandMeta(run) {
+  const started = run.startedAt ? new Date(run.startedAt).toLocaleTimeString() : 'unknown';
+  const ended = run.endedAt ? new Date(run.endedAt).toLocaleTimeString() : '';
+  const code = run.code === null || run.code === undefined ? '' : ` code ${run.code}`;
+  const error = run.error ? ` ${run.error}` : '';
+  const request = run.requestId ? ` ${run.requestId}` : '';
+  return ended ? `${started} -> ${ended}${code}${error}${request}` : `${started}${request}`;
+}
+
+function createRequestId(actionId) {
+  const random = crypto.getRandomValues(new Uint32Array(1))[0].toString(16);
+  return `${Date.now().toString(36)}-${actionId}-${random}`;
+}
+
+function getActionLabel(actionId) {
+  return state.cacheActions.find((action) => action.id === actionId)?.label || actionId || 'Cache action';
 }
 
 function renderPortMap() {

@@ -104,7 +104,9 @@ function stopTail(ws) {
 }
 
 function runAllowedCacheAction(ws, message) {
-  const child = runCacheAction(String(message.actionId || ''), (payload) => send(ws, payload));
+  const actionId = String(message.actionId || '');
+  const requestId = String(message.requestId || `${Date.now()}-${actionId || 'cache-action'}`);
+  const child = runCacheAction(actionId, requestId, (payload) => send(ws, payload));
   if (!child) return;
 
   const actions = activeCacheActions.get(ws) || new Set();

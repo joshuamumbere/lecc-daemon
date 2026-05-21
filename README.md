@@ -115,6 +115,8 @@ The Logs tab supports pausing display updates, clearing the extension-side view,
 
 The Controls tab also lists cache actions reported by the daemon. Each action maps to a fixed command and argument list in `src/handlers/cache.js`; the extension only sends an action ID.
 
+Cache command runs use request IDs and are tracked in a recent command history. The popup persists the last 20 command runs in `chrome.storage.local`, including status, timestamps, exit code, and failure details.
+
 Use the Settings tab to edit project mappings without restarting the daemon. Ports must be numeric, project names are required, and log paths must resolve inside `LECC_ALLOWED_LOG_DIRS`.
 
 ## Demo Log

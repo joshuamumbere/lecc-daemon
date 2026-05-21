@@ -396,6 +396,57 @@ input:focus {
   margin-bottom: 2px;
 }
 
+.history-list {
+  display: grid;
+  gap: 6px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  border: 1px solid var(--line);
+  background: #121515;
+}
+
+.history-item strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.history-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.history-status {
+  min-width: 72px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  text-align: center;
+  font-size: 11px;
+}
+
+.history-status[data-status="running"] {
+  border-color: rgba(240, 184, 79, .65);
+  color: var(--warn);
+}
+
+.history-status[data-status="succeeded"] {
+  border-color: rgba(137, 209, 133, .65);
+  color: var(--accent-strong);
+}
+
+.history-status[data-status="failed"] {
+  border-color: rgba(255, 107, 107, .65);
+  color: var(--danger);
+}
+
 .project-list {
   display: grid;
   gap: 8px;
